@@ -1,0 +1,27 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+msal>=1.28.0
+requests>=2.32.0
+python-dotenv>=1.2.1
+pydantic>=2.7.0
+qrcode[pil]>=7.4.2
+cryptography>=42.0.0
+sqlalchemy==2.0.30
+# Report generation
+docxtpl>=0.20.2
+docxcompose>=1.4.0
+python-docx>=1.2.0
+docx2pdf>=0.1.8
+lxml>=6.0.2
+jinja2>=3.1.6
+reportlab>=4.4.9
+pdfplumber>=0.11.0
+python-multipart>=0.0.9
+# Shared deps
+babel>=2.17.0
+et-xmlfile>=2.0.0
+markupsafe>=3.0.3
+pillow>=12.1.1
+six>=1.17.0
+tqdm>=4.67.1
+typing-extensions>=4.15.0

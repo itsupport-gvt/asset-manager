@@ -1,0 +1,20 @@
+services:
+  asset-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: asset-manager
+    ports:
+      - "8000:8000"
+    volumes:
+      # Map the data folder where the SQLite DB will be stored
+      - asset_manager_data:/app/backend/data
+      # Map the .env file if it exists, uncomment if needed
+      # - ./backend/.env:/app/backend/.env
+    restart: unless-stopped
+    environment:
+      # Optional: override any env vars here if needed
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  asset_manager_data:

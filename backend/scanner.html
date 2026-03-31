@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Asset Scanner</title>
+    <script src="/scanner-lib/html5-qrcode.min.js"></script>
+    <script src="/scanner-lib/tesseract.min.js"></script>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --accent: #3b82f6;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* Lock body to viewport height to prevent scrolling */
+      body {
+        background: var(--bg);
+        color: var(--text);
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* Header */
+      .header {
+        padding: env(safe-area-inset-top, 12px) 16px 12px;
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 10;
+      }
+      .header-title {
+        font-size: 16px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ef4444;
+        transition: background 0.3s;
+      }
+      .status-dot.connected {
+        background: #22c55e;
+      }
+      .header-actions {
+        display: flex;
+        gap: 12px;
+      }
+
+      /* Mode Toggle */
+      .mode-tabs {
+        display: flex;
+        background: var(--panel);
+        margin: 8px 16px;
+        border-radius: 12px;
+        padding: 4px;
+        z-index: 10;
+      }
+      .tab {
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+      .tab.active {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Camera Area */
+      .camera-wrap {
+        flex: 1;
+        position: relative;
+        background: #000;
+        overflow: hidden;
+        border-radius: 20px 20px 0 0;
+        margin-top: 4px;
+      }
+      #reader {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      #reader video {
+        object-fit: cover !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      #reader__dashboard_section_csr {
+        display: none !important;
+      } /* Hide default controls */
+
+      /* Floating UI Overlays */
+      .float-btn {
+        background: rgba(30, 41, 59, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #fff;
+        border-radius: 50px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        backdrop-filter: blur(4px);
+      }
+
+      .cam-switch {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        z-index: 20;
+      }
+
+      .ocr-bar {
+        position: absolute;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: none;
+        width: 90%;
+        max-width: 320px;
+      }
+      .ocr-bar.visible {
+        display: flex;
+      }
+      .ocr-btn {
+        width: 100%;
+        padding: 16px;
+        border-radius: 16px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        font-size: 16px;
+        font-weight: 700;
+        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+      }
+      #ocr-input {
+        display: none;
+      }
+
+      /* Bottom Sheet Results */
+      .bottom-sheet {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        border-radius: 24px 24px 0 0;
+        padding: 20px 16px env(safe-area-inset-bottom, 20px);
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+        z-index: 30;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+        max-height: 85vh;
+      }
+      .bottom-sheet.open {
+        transform: translateY(0);
+      }
+      .sheet-handle {
+        width: 40px;
+        height: 4px;
+        background: #475569;
+        border-radius: 2px;
+        margin: 0 auto 16px;
+      }
+
+      .results-scroll {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 16px;
+      }
+      .token {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 14px;
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        margin-bottom: 8px;
+        transition: 0.2s;
+      }
+      .token.selected {
+        border-color: #22c55e;
+        background: rgba(34, 197, 94, 0.1);
+      }
+      .token-text {
+        font-size: 15px;
+        font-weight: 500;
+        word-break: break-all;
+      }
+      .token-label {
+        font-size: 11px;
+        background: #334155;
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .edit-input {
+        width: 100%;
+        padding: 14px;
+        background: var(--bg);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        color: #fff;
+        font-size: 16px;
+        margin-bottom: 12px;
+        outline: none;
+        transition: border 0.2s;
+      }
+      .edit-input:focus {
+        border-color: var(--accent);
+      }
+      .btn-row {
+        display: flex;
+        gap: 12px;
+      }
+      .btn {
+        flex: 1;
+        padding: 14px;
+        border-radius: 12px;
+        font-weight: 600;
+        border: none;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .btn-send {
+        background: #22c55e;
+        color: #fff;
+      }
+      .btn-close {
+        background: #334155;
+        color: #fff;
+        flex: 0.4;
+      }
+
+      /* Toast & Loader */
+      .toast {
+        position: fixed;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%) scale(0.9);
+        opacity: 0;
+        background: #22c55e;
+        color: #fff;
+        padding: 12px 24px;
+        border-radius: 50px;
+        font-size: 14px;
+        font-weight: 600;
+        transition: 0.3s;
+        z-index: 100;
+        pointer-events: none;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+      }
+      .toast.show {
+        transform: translateX(-50%) scale(1);
+        opacity: 1;
+      }
+      .toast.error {
+        background: #ef4444;
+      }
+
+      .loader-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(4px);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+      }
+      .loader-overlay.active {
+        display: flex;
+      }
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #334155;
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 12px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="header-title">
+        <div class="status-dot" id="status-dot"></div>
+        <span>Scanner</span>
+      </div>
+      <div class="header-actions">
+        <span id="status-text" style="font-size: 12px; color: var(--muted)"
+          >Connecting...</span
+        >
+      </div>
+    </div>
+
+    <!-- Dynamic Context Banner -->
+    <div id="context-banner" style="display: none; background: #3b82f6; color: white; padding: 10px 16px; font-size: 13px; font-weight: 600; text-align: center; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); z-index: 10;">
+      <!-- Content injected by JS -->
+    </div>
+
+    <div class="mode-tabs">
+      <button class="tab active" id="tab-qr" onclick="setMode('qr')">
+        QR / Barcode
+      </button>
+      <button class="tab" id="tab-field" onclick="setMode('field')">
+        Text / OCR
+      </button>
+    </div>
+
+    <div class="camera-wrap">
+      <div id="reader"></div>
+
+      <button
+        class="float-btn cam-switch"
+        onclick="switchCamera()"
+        id="cam-switch-btn"
+        style="display: none"
+      >
+        🔄 Lens
+      </button>
+
+      <div class="ocr-bar" id="ocr-bar">
+        <input
+          type="file"
+          id="ocr-input"
+          accept="image/*"
+          capture="environment"
+        />
+        <button
+          class="ocr-btn"
+          onclick="document.getElementById('ocr-input').click()"
+        >
+          📷 Capture Label
+        </button>
+      </div>
+
+      <div class="loader-overlay" id="loader">
+        <div class="spinner"></div>
+        <div style="font-weight: 600" id="loader-text">Analyzing Text...</div>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 8px">
+          Keep the app open
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared Bottom Sheet for OCR OR QR Choices -->
+    <div class="bottom-sheet" id="sheet">
+      <div class="sheet-handle"></div>
+      
+      <!-- OCR Mode: Token Results -->
+      <div id="ocr-results" style="display: none;">
+        <div class="results-scroll" id="token-list"></div>
+        <input
+          class="edit-input"
+          id="edit-input"
+          type="text"
+          placeholder="Value to send..."
+        />
+        <div class="btn-row">
+          <button class="btn btn-send" onclick="sendValue()">
+            Send to Screen
+          </button>
+          <button class="btn btn-close" onclick="closeSheet()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- QR Mode: Mobile vs PC Choices -->
+      <div id="qr-choices" style="display: none; padding-bottom: 20px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h3 style="font-size: 18px; margin-bottom: 8px;">Asset Scanned</h3>
+          <p id="qr-scanned-val" style="color: var(--muted); font-size: 14px; word-break: break-all;"></p>
+        </div>
+        <div class="btn-row" style="flex-direction: column; gap: 16px;">
+          <button class="btn" style="background: #3b82f6; color: white;" onclick="openAssetOnPhone()">📱 View on Phone</button>
+          <button class="btn" style="background: #22c55e; color: white;" onclick="sendAssetToPC()">💻 Send to PC Screen</button>
+          <button class="btn" style="background: transparent; color: var(--muted); padding: 8px;" onclick="closeSheet()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      // --- State ---
+      let ws = null;
+      let mode = "qr";
+      let scanner = null;
+      let scanCooldown = false;
+      let cameras = [];
+      let currentCamIdx = 0;
+      let activeContext = null;
+      let pendingQrValue = "";
+
+      // --- WebSockets ---
+      function connectWs() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws/scanner`);
+        ws.onopen = () => {
+          document.getElementById("status-dot").classList.add("connected");
+          document.getElementById("status-text").textContent = "Live";
+        };
+        ws.onclose = () => {
+          document.getElementById("status-dot").classList.remove("connected");
+          document.getElementById("status-text").textContent =
+            "Reconnecting...";
+          setTimeout(connectWs, 2000);
+        };
+        ws.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'set_context') {
+               handleContextUpdate(data.context);
+            }
+          } catch(e) {}
+        };
+      }
+
+      function handleContextUpdate(ctx) {
+         const banner = document.getElementById("context-banner");
+         activeContext = ctx;
+         if (!ctx || !ctx.action) {
+           banner.style.display = "none";
+           return;
+         }
+         
+         banner.style.display = "block";
+         if (ctx.action === "assign") {
+           banner.innerHTML = `Mode: Assigning Asset to <br/><span style="font-size:16px;">${ctx.display}</span>`;
+         } else if (ctx.action === "swap") {
+           banner.innerHTML = `Mode: Swapping Asset for <br/><span style="font-size:16px;">${ctx.display}</span>`;
+         } else {
+           banner.innerHTML = `Active Context: ${ctx.action}`;
+         }
+         // Auto-switch to QR if a context requires an asset
+         if (mode !== 'qr') setMode('qr');
+      }
+
+      function sendMsg(payload) {
+        if (ws && ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify(payload));
+        else showToast("No connection to PC", true);
+      }
+
+      // --- UI Logic ---
+      function setMode(m) {
+        mode = m;
+        document
+          .getElementById("tab-qr")
+          .classList.toggle("active", m === "qr");
+        document
+          .getElementById("tab-field")
+          .classList.toggle("active", m === "field");
+        document
+          .getElementById("ocr-bar")
+          .classList.toggle("visible", m === "field");
+        closeSheet();
+      }
+
+      function showToast(msg, isError = false) {
+        const el = document.getElementById("toast");
+        el.textContent = msg;
+        el.className = "toast" + (isError ? " error show" : " show");
+        setTimeout(() => el.classList.remove("show"), 2500);
+      }
+
+      // --- Camera Management ---
+      async function initScanner() {
+        scanner = new Html5Qrcode("reader");
+
+        try {
+          const devices = await Html5Qrcode.getCameras();
+          if (devices && devices.length > 0) {
+            // Filter to back cameras if possible, otherwise keep all
+            cameras = devices.filter(
+              (c) =>
+                c.label.toLowerCase().includes("back") ||
+                c.label.toLowerCase().includes("rear"),
+            );
+            if (cameras.length === 0) cameras = devices; // fallback
+
+            // Default to the last camera in the list (usually the main/best rear camera on mobile)
+            currentCamIdx = cameras.length - 1;
+
+            if (cameras.length > 1) {
+              document.getElementById("cam-switch-btn").style.display = "flex";
+            }
+
+            startCamera();
+          }
+        } catch (err) {
+          document.getElementById("reader").innerHTML =
+            `<div style="padding:20px;text-align:center;color:#ef4444;margin-top:40px;">Camera access denied or HTTPS required.</div>`;
+        }
+      }
+
+      function startCamera() {
+        if (scanner.isScanning) {
+          scanner.stop().then(() => startCamInternal());
+        } else {
+          startCamInternal();
+        }
+      }
+
+      function startCamInternal() {
+        const camId = cameras[currentCamIdx].id;
+        scanner.start(
+          camId,
+          {
+            fps: 10,
+            qrbox: (w, h) => {
+              const s = Math.min(w, h) * 0.7;
+              return { width: s, height: s };
+            },
+            aspectRatio: 1.0,
+          },
+          onScanSuccess,
+          () => {},
+        );
+      }
+
+      function switchCamera() {
+        currentCamIdx = (currentCamIdx + 1) % cameras.length;
+        showToast(`Switched lens (${currentCamIdx + 1}/${cameras.length})`);
+        startCamera();
+      }
+
+      function onScanSuccess(text) {
+        if (scanCooldown) return;
+        scanCooldown = true;
+        setTimeout(() => (scanCooldown = false), 1500);
+
+        if (mode === "qr") {
+          const val = text.trim();
+          if (activeContext) {
+            // Immediate action based on PC context
+            sendMsg({ mode: "context_action", context: activeContext, value: val });
+            showToast("Context action sent!");
+            document.getElementById("context-banner").style.display = "none";
+            activeContext = null;
+            if (navigator.vibrate) navigator.vibrate(50);
+          } else {
+            // Ask user where to open it
+            pendingQrValue = val;
+            let displayVal = val;
+            if (val.startsWith("http")) displayVal = val.split("/").pop();
+            document.getElementById("qr-scanned-val").textContent = displayVal;
+            
+            document.getElementById("ocr-results").style.display = "none";
+            document.getElementById("qr-choices").style.display = "block";
+            document.getElementById("sheet").classList.add("open");
+            if (scanner && scanner.isScanning) scanner.pause();
+            if (navigator.vibrate) navigator.vibrate(50);
+          }
+        } else {
+          processTokens(text, "Barcode");
+        }
+      }
+
+      function openAssetOnPhone() {
+         let val = pendingQrValue;
+         // If it's just an ID without the URL, craft a local URL
+         if (!val.startsWith("http")) {
+            val = `${location.protocol}//${location.host}/asset/${encodeURIComponent(val)}`;
+         }
+         window.location.href = val;
+      }
+      
+      function sendAssetToPC() {
+         sendMsg({ mode: "asset_qr", value: pendingQrValue, tokens: [] });
+         showToast("Sent to PC Screen!");
+         closeSheet();
+      }
+
+      // --- OCR Pipeline ---
+      // Simplified preprocess: Heavily contrast-boosting image to kill shadows
+      function preprocessForOcr(file) {
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              const max = 1600;
+              const scale = Math.min(1, max / Math.max(img.width, img.height));
+              const canvas = document.createElement("canvas");
+              canvas.width = img.width * scale;
+              canvas.height = img.height * scale;
+              const ctx = canvas.getContext("2d");
+
+              // Boost contrast and grayscale via canvas filters
+              ctx.filter = "grayscale(100%) contrast(150%) brightness(110%)";
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              canvas.toBlob(resolve, "image/jpeg", 0.9);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      document
+        .getElementById("ocr-input")
+        .addEventListener("change", async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          e.target.value = "";
+
+          const loader = document.getElementById("loader");
+          loader.classList.add("active");
+
+          try {
+            const blob = await preprocessForOcr(file);
+            const url = URL.createObjectURL(blob);
+
+            // Run Tesseract with constrained character set to avoid garbage characters
+            const result = await Tesseract.recognize(url, "eng", {
+              logger: (m) => {},
+              tessedit_pageseg_mode: "11", // Sparse text
+              tessedit_char_whitelist:
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_/.",
+            });
+
+            URL.revokeObjectURL(url);
+            const text = result.data.text.trim();
+
+            if (!text) throw new Error("No text found");
+            processTokens(text, "OCR");
+          } catch (err) {
+            showToast(
+              "Could not read label. Get closer or use better lighting.",
+              true,
+            );
+          } finally {
+            loader.classList.remove("active");
+          }
+        });
+
+      // --- Token Processing & Sheet ---
+      function processTokens(rawText, sourceLabel) {
+        const lines = rawText
+          .split(/[\n\r]+/)
+          .map((l) => l.trim())
+          .filter((l) => l.length > 2);
+        let tokens = [];
+
+        const patterns = [
+          {
+            re: /(?:S\/N|SN|Serial)\s*:?\s*([A-Z0-9\-]{4,30})/i,
+            label: "Serial",
+          },
+          { re: /(?:Model|Prod)\s*:?\s*([A-Z0-9\- ]{3,30})/i, label: "Model" },
+          { re: /(?:P\/N|PN|Part)\s*:?\s*([A-Z0-9\-]{4,30})/i, label: "Part#" },
+        ];
+
+        // 1. Regex Extractions
+        lines.forEach((line) => {
+          patterns.forEach((p) => {
+            const m = line.match(p.re);
+            if (m && m[1]) tokens.push({ text: m[1].trim(), label: p.label });
+          });
+        });
+
+        // 2. High-Density Alphanumeric codes (likely serials or models)
+        lines.forEach((line) => {
+          const words = line.split(/\s+/);
+          words.forEach((w) => {
+            if (w.length > 4 && /[0-9]/.test(w) && /[A-Z]/i.test(w)) {
+              if (!tokens.find((t) => t.text === w))
+                tokens.push({ text: w, label: "Code" });
+            }
+          });
+        });
+
+        // 3. Fallback: Add whole lines
+        if (tokens.length === 0) {
+          lines.forEach((l) => tokens.push({ text: l, label: "Text" }));
+        }
+
+        // Dedup
+        const unique = [];
+        const seen = new Set();
+        tokens.forEach((t) => {
+          if (!seen.has(t.text.toLowerCase())) {
+            seen.add(t.text.toLowerCase());
+            unique.push(t);
+          }
+        });
+
+        openSheet(unique, rawText);
+      }
+
+      function openSheet(tokens, rawVal) {
+        const list = document.getElementById("token-list");
+        list.innerHTML = "";
+
+        tokens.slice(0, 10).forEach((t, i) => {
+          const div = document.createElement("div");
+          div.className = "token";
+          div.innerHTML = `<span class="token-text">${t.text}</span><span class="token-label">${t.label}</span>`;
+          div.onclick = () => {
+            document
+              .querySelectorAll(".token")
+              .forEach((el) => el.classList.remove("selected"));
+            div.classList.add("selected");
+            document.getElementById("edit-input").value = t.text;
+          };
+          list.appendChild(div);
+        });
+
+        document.getElementById("edit-input").value =
+          tokens.length > 0 ? tokens[0].text : rawVal.trim();
+        if (list.firstChild) list.firstChild.classList.add("selected");
+
+        document.getElementById("qr-choices").style.display = "none";
+        document.getElementById("ocr-results").style.display = "block";
+        document.getElementById("sheet").classList.add("open");
+        if (scanner && scanner.isScanning) scanner.pause();
+      }
+
+      function closeSheet() {
+        document.getElementById("sheet").classList.remove("open");
+        scanCooldown = false;
+        if (scanner && scanner.isScanning) scanner.resume();
+      }
+
+      function sendValue() {
+        const val = document.getElementById("edit-input").value.trim();
+        if (!val) return;
+        const tokens = Array.from(document.querySelectorAll(".token-text")).map(
+          (el) => el.textContent,
+        );
+        sendMsg({ mode: "field_scan", value: val, tokens });
+        showToast("Text Sent");
+        closeSheet();
+      }
+
+      // --- Init ---
+      // HTTPS guard: camera APIs require a secure context on mobile
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        document.querySelector('.camera-wrap').innerHTML = `
+          <div style="padding:32px;text-align:center;color:#f8fafc;">
+            <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+            <h2 style="margin-bottom:12px;">HTTPS Required</h2>
+            <p style="color:var(--muted);font-size:14px;line-height:1.6;">
+              Mobile browsers require a secure connection (HTTPS) for camera access.
+              <br><br>
+              Ask your admin to enable HTTPS on the server, or access via <strong>localhost</strong> from the computer itself.
+            </p>
+          </div>
+        `;
+        connectWs(); // still connect WS for text-only use
+      } else {
+        connectWs();
+        initScanner();
+      }
+    </script>
+  </body>
+</html>

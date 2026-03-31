@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons+Round');
+@import "tailwindcss";
+
+/* ── Design Tokens ─────────────────────────────────────────────── */
+:root {
+  --bg:         #f8f9fa;
+  --surface:    #ffffff;
+  --surface-2:  #f1f3f4;
+  --border:     #e0e0e0;
+  --primary:    #1a73e8;
+  --primary-dk: #1557b0;
+  --primary-bg: #e8f0fe;
+  --on-primary: #ffffff;
+  --text-1:     #202124;
+  --text-2:     #5f6368;
+  --text-3:     #80868b;
+  --success:    #188038;
+  --success-bg: #e6f4ea;
+  --warn:       #f29900;
+  --warn-bg:    #fef7e0;
+  --danger:     #d93025;
+  --danger-bg:  #fce8e6;
+  --shadow-1:   0 1px 3px rgba(60,64,67,.15), 0 1px 2px rgba(60,64,67,.12);
+  --shadow-2:   0 2px 6px rgba(60,64,67,.15), 0 1px 4px rgba(60,64,67,.12);
+  --shadow-3:   0 4px 12px rgba(60,64,67,.15), 0 2px 6px rgba(60,64,67,.10);
+  --radius-sm:  8px;
+  --radius:     12px;
+  --radius-lg:  16px;
+}
+
+/* ── Base ───────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: 'Roboto', 'Google Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Google Material Utility Classes ────────────────────────────── */
+@layer utilities {
+  /* Cards */
+  .md-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-1);
+    transition: box-shadow .2s ease;
+  }
+  .md-card:hover {
+    box-shadow: var(--shadow-2);
+  }
+  .md-card-flat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  /* Buttons */
+  .md-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    border-radius: 24px;
+    font-family: 'Google Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s, box-shadow .15s;
+    border: none;
+    outline: none;
+  }
+  .md-btn-primary {
+    background: var(--primary);
+    color: var(--on-primary);
+    box-shadow: var(--shadow-1);
+  }
+  .md-btn-primary:hover {
+    background: var(--primary-dk);
+    box-shadow: var(--shadow-2);
+  }
+  .md-btn-outlined {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--border);
+  }
+  .md-btn-outlined:hover {
+    background: var(--primary-bg);
+  }
+  .md-btn-tonal {
+    background: var(--primary-bg);
+    color: var(--primary);
+  }
+  .md-btn-tonal:hover {
+    background: #d2e3fc;
+  }
+
+  /* Chip */
+  .md-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  /* Input */
+  .md-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    color: var(--text-1);
+    outline: none;
+    transition: border .15s, box-shadow .15s;
+  }
+  .md-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(26,115,232,.12);
+  }
+  .md-input::placeholder { color: var(--text-3); }
+
+  /* Section header */
+  .md-section-label {
+    font-family: 'Google Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    color: var(--text-2);
+    margin-bottom: 12px;
+  }
+
+  /* Status badges */
+  .badge-active   { background: var(--success-bg); color: var(--success); }
+  .badge-warn     { background: var(--warn-bg);    color: #b06000; }
+  .badge-neutral  { background: var(--surface-2);  color: var(--text-2); }
+  .badge-danger   { background: var(--danger-bg);  color: var(--danger); }
+
+  /* Material icon helper */
+  .icon { font-family: 'Material Icons Round'; font-style: normal; font-size: 20px; line-height: 1; }
+  .icon-sm { font-size: 16px; }
+  .icon-lg { font-size: 24px; }
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #bdbdbd; }
+
+/* ── Autofill fix ───────────────────────────────────────────────── */
+input:-webkit-autofill, input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--surface) inset !important;
+  -webkit-text-fill-color: var(--text-1) !important;
+}
+
+/* ── Animations ─────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.animate-in { animation: fadeIn .25s ease forwards; }
+

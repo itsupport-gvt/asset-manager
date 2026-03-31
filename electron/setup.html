@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Asset Manager — Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #f8f9fa;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 40px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 4px 24px rgba(0,0,0,.1);
+    }
+    .logo { font-size: 36px; margin-bottom: 12px; }
+    h1 { font-size: 22px; font-weight: 700; color: #202124; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #666; margin-bottom: 28px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #444; margin-bottom: 4px; margin-top: 14px; }
+    input {
+      width: 100%; padding: 9px 12px; font-size: 13px;
+      border: 1px solid #dadce0; border-radius: 8px;
+      outline: none; transition: border-color .2s;
+    }
+    input:focus { border-color: #4285f4; }
+    .hint { font-size: 11px; color: #999; margin-top: 3px; }
+    .btn {
+      margin-top: 24px; width: 100%; padding: 12px;
+      background: #4285f4; color: #fff; border: none;
+      border-radius: 8px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background .2s;
+    }
+    .btn:hover { background: #3367d6; }
+    .btn:disabled { background: #ccc; cursor: not-allowed; }
+    .error {
+      margin-top: 12px; padding: 10px 14px;
+      background: #fce8e6; color: #c5221f;
+      border-radius: 8px; font-size: 13px; display: none;
+    }
+    .divider { border-top: 1px solid #e0e0e0; margin: 24px 0 20px; }
+    .section-title { font-size: 13px; font-weight: 600; color: #444; margin-bottom: 4px; }
+    .optional { font-size: 11px; color: #999; font-weight: 400; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">📦</div>
+    <h1>Asset Manager Setup</h1>
+    <p class="sub">Enter your SharePoint credentials to connect the app to your Excel workbook.</p>
+
+    <div class="section-title">SharePoint / Azure Credentials</div>
+
+    <label>Tenant ID</label>
+    <input type="text" id="tenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+    <label>Client ID (App Registration)</label>
+    <input type="text" id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+    <label>Client Secret</label>
+    <input type="password" id="clientSecret" placeholder="App registration client secret" />
+
+    <label>SharePoint File URL</label>
+    <input type="text" id="fileUrl" placeholder="https://yourtenant.sharepoint.com/:x:/s/..." />
+    <p class="hint">The sharing link URL of your Excel workbook on SharePoint.</p>
+
+    <div class="divider"></div>
+
+    <div class="section-title">Optional <span class="optional">— leave blank if not used</span></div>
+
+    <label>NGROK URL <span class="optional">(for mobile scanner over internet)</span></label>
+    <input type="text" id="ngrokUrl" placeholder="https://xxxx.ngrok-free.app" />
+
+    <div class="error" id="errorMsg"></div>
+
+    <button class="btn" id="saveBtn" onclick="save()">Save &amp; Launch App</button>
+  </div>
+
+  <script>
+    async function save() {
+      const btn = document.getElementById('saveBtn');
+      const errEl = document.getElementById('errorMsg');
+      errEl.style.display = 'none';
+
+      const tenantId    = document.getElementById('tenantId').value.trim();
+      const clientId    = document.getElementById('clientId').value.trim();
+      const clientSecret = document.getElementById('clientSecret').value.trim();
+      const fileUrl     = document.getElementById('fileUrl').value.trim();
+      const ngrokUrl    = document.getElementById('ngrokUrl').value.trim();
+
+      if (!tenantId || !clientId || !clientSecret || !fileUrl) {
+        errEl.textContent = 'Please fill in all required fields.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        await window.assetManager.setupComplete({
+          SHAREPOINT_TENANT_ID: tenantId,
+          SHAREPOINT_CLIENT_ID: clientId,
+          SHAREPOINT_CLIENT_SECRET: clientSecret,
+          SHAREPOINT_FILE_URL: fileUrl,
+          NGROK_URL: ngrokUrl,
+        });
+      } catch (e) {
+        errEl.textContent = 'Failed to save: ' + e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Save & Launch App';
+      }
+    }
+
+    // Pre-fill existing config if available
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const cfg = await window.assetManager.getConfig();
+        if (cfg) {
+          if (cfg.SHAREPOINT_TENANT_ID) document.getElementById('tenantId').value = cfg.SHAREPOINT_TENANT_ID;
+          if (cfg.SHAREPOINT_CLIENT_ID) document.getElementById('clientId').value = cfg.SHAREPOINT_CLIENT_ID;
+          if (cfg.SHAREPOINT_CLIENT_SECRET) document.getElementById('clientSecret').value = cfg.SHAREPOINT_CLIENT_SECRET;
+          if (cfg.SHAREPOINT_FILE_URL) document.getElementById('fileUrl').value = cfg.SHAREPOINT_FILE_URL;
+          if (cfg.NGROK_URL) document.getElementById('ngrokUrl').value = cfg.NGROK_URL;
+        }
+      } catch {}
+    });
+  </script>
+</body>
+</html>

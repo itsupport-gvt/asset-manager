@@ -1,0 +1,48 @@
+{
+  "name": "asset-manager",
+  "version": "1.0.0",
+  "description": "Gravity Asset Manager — Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.gravitybp.assetmanager",
+    "productName": "Asset Manager",
+    "copyright": "Gravity BP",
+    "extraResources": [
+      {
+        "from": "../backend/dist/asset-backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico",
+      "sign": null,
+      "forceCodeSigning": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Asset Manager"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "itsupport-gvt",
+      "repo": "asset-manager",
+      "releaseType": "release"
+    }
+  }
+}

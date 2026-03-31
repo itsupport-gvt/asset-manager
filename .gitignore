@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# Build outputs
+backend/dist/
+backend/static/
+backend/data/
+backend/templates/
+electron/dist/
+frontend/node_modules/
+electron/node_modules/
+build/
+
+# Secrets / credentials
+.env
+.env.*
+*.env
+*.env.*
+backend/cert.pem
+backend/key.pem
+
+# Debug / temp logs
+backend/debug_*.log
+backend/debug_*.txt
+backend/headers.txt
+backend/print_log.json
+frontend/build_errors.txt
+frontend/errors.txt
+frontend/ts_errors.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

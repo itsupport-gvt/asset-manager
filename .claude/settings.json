@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/devmu/OneDrive/Desktop/Asset report generator/**)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Read(//c/Users/devmu/OneDrive/Desktop/**)",
+      "Bash(.venv/Scripts/pip show:*)",
+      "Bash(\"c:/Users/devmu/OneDrive/Desktop/Asset report generator/.venv/Scripts/python.exe\" -c \"import docxtpl, docx2pdf, reportlab; print\\(''all ok''\\)\")",
+      "Bash(pip show:*)",
+      "Bash(\"c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/backend/.venv/Scripts/python.exe\" -c \"import docxtpl; print\\(''docxtpl ok'', docxtpl.__version__\\)\")",
+      "Bash(tasklist:*)",
+      "Bash(wmic process where \"name=''python3.12.exe''\" get ExecutablePath,CommandLine)",
+      "Bash(wmic process:*)",
+      "Bash(docker build:*)",
+      "Bash(docker compose:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/pip.exe install:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"Test-Path ''c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/build-electron.ps1''\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& { $null = [System.Management.Automation.Language.Parser]::ParseFile\\(''c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/build-electron.ps1'', [ref]$null, [ref]$errors\\); if \\($errors\\) { $errors | ForEach-Object { Write-Host $_.Message } } else { Write-Host ''No parse errors'' } }\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/build-electron.ps1\" -WhatIf)",
+      "Bash(CSC_IDENTITY_AUTO_DISCOVERY=false WIN_CSC_KEY_PASSWORD=\"\" npm run dist)",
+      "Bash(WCSIGN_DIR=\"$LOCALAPPDATA/electron-builder/Cache/winCodeSign/winCodeSign-2.6.0\")",
+      "Bash(SEVEN_ZIP=\"c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/electron/node_modules/7zip-bin/win/x64/7za.exe\":*)",
+      "Bash(ARCHIVE=\"/tmp/winCodeSign-2.6.0.7z\")",
+      "Bash(__NEW_LINE_eb7e8173c029d184__ echo \"Downloading...\")",
+      "Bash(curl:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\frontend\\src\\pages",
+      "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\$LOCALAPPDATA\\electron-builder\\Cache",
+      "C:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\$WCSIGN_DIR\\darwin\\10.12\\lib",
+      "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\.github",
+      "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator"
+    ]
+  }
+}

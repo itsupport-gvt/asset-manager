@@ -1,0 +1,363 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
+} from 'recharts';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface DashboardStats {
+  total_assets: number;
+  total_employees: number;
+  assigned_count: number;
+  unassigned_count: number;
+  pending_sync: number;
+  by_status: Record<string, number>;
+  by_type: { type: string; count: number }[];
+  by_condition: Record<string, number>;
+  top_assignees: { name: string; email: string; count: number }[];
+  recent_activity: {
+    asset_id: string; asset_label: string; action: string;
+    employee: string; timestamp: string;
+  }[];
+}
+
+// ── Colour Palettes ───────────────────────────────────────────────────────────
+const STATUS_COLORS: Record<string, string> = {
+  'Active':     '#1a73e8',
+  'In Stock':   '#188038',
+  'Missing':    '#d93025',
+  'Retired':    '#80868b',
+  'Unassigned': '#f29900',
+};
+const COND_COLORS: Record<string, string> = {
+  'New':       '#1a73e8',
+  'Excellent': '#188038',
+  'Good':      '#34a853',
+  'Fair':      '#f29900',
+  'Poor':      '#e37400',
+  'Damaged':   '#d93025',
+};
+const TYPE_BAR_COLOR = '#1a73e8';
+const FALLBACK_COLORS = ['#1a73e8','#188038','#f29900','#d93025','#9c27b0','#00bcd4','#ff5722','#607d8b'];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function formatTime(iso: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+         d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+function KpiCard({ icon, label, value, sub, color }: {
+  icon: string; label: string; value: number | string;
+  sub?: string; color?: string;
+}) {
+  return (
+    <div className="md-card" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{
+        width: 48, height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: color ? `${color}18` : 'var(--primary-bg)',
+        flexShrink: 0,
+      }}>
+        <span className="icon" style={{ fontSize: 24, color: color || 'var(--primary)' }}>{icon}</span>
+      </div>
+      <div>
+        <div style={{ fontSize: 26, fontWeight: 700, fontFamily: "'Google Sans', sans-serif", color: 'var(--text-1)', lineHeight: 1.1 }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ icon, title }: { icon: string; title: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+      <span className="icon" style={{ color: 'var(--primary)', fontSize: 20 }}>{icon}</span>
+      <span style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 600, fontSize: 16, color: 'var(--text-1)' }}>{title}</span>
+    </div>
+  );
+}
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', fontSize: 13, boxShadow: 'var(--shadow-2)' }}>
+      {label && <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>}
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ color: p.color || 'var(--text-1)' }}>{p.name}: <strong>{p.value}</strong></div>
+      ))}
+    </div>
+  );
+};
+
+const CustomPieTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const item = payload[0];
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 14px', fontSize: 13, boxShadow: 'var(--shadow-2)' }}>
+      <div style={{ fontWeight: 600, color: item.payload.fill }}>{item.name}</div>
+      <div style={{ color: 'var(--text-1)' }}>Count: <strong>{item.value}</strong></div>
+      <div style={{ color: 'var(--text-3)' }}>{item.payload.pct}% of total</div>
+    </div>
+  );
+};
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const nav = useNavigate();
+
+  function load() {
+    setLoading(true);
+    fetch('/api/stats')
+      .then(r => r.json())
+      .then(d => { setStats(d); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }
+
+  useEffect(() => { load(); }, []);
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, color: 'var(--text-2)' }}>
+      <div style={{ width: 28, height: 28, border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+      Loading dashboard…
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ textAlign: 'center', padding: 48, color: 'var(--danger)' }}>
+      <span className="icon" style={{ fontSize: 36 }}>error</span>
+      <p style={{ marginTop: 12 }}>{error}</p>
+      <button onClick={load} className="md-btn md-btn-primary" style={{ marginTop: 16 }}>Retry</button>
+    </div>
+  );
+
+  if (!stats) return null;
+
+  // ── Derived data ────────────────────────────────────────────────────────────
+  const assignRate = stats.total_assets > 0
+    ? Math.round((stats.assigned_count / stats.total_assets) * 100)
+    : 0;
+
+  const statusPieData = Object.entries(stats.by_status).map(([name, value], i) => ({
+    name, value,
+    fill: STATUS_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    pct: stats.total_assets > 0 ? Math.round((value / stats.total_assets) * 100) : 0,
+  }));
+
+  const condPieData = Object.entries(stats.by_condition).map(([name, value], i) => ({
+    name, value,
+    fill: COND_COLORS[name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+    pct: stats.total_assets > 0 ? Math.round((value / stats.total_assets) * 100) : 0,
+  }));
+
+  // Top 10 types for bar chart
+  const typeBarData = stats.by_type.slice(0, 10).map(d => ({ name: d.type, Assets: d.count }));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+      {/* ── Page Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 700, fontSize: 26, color: 'var(--text-1)', margin: 0 }}>
+            Dashboard
+          </h1>
+          <p style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 4 }}>
+            Live overview of your IT asset inventory
+          </p>
+        </div>
+        <button onClick={load} className="md-btn" style={{ gap: 6, fontSize: 13, color: 'var(--primary)', background: 'var(--primary-bg)', border: 'none' }}>
+          <span className="icon icon-sm">refresh</span>
+          Refresh
+        </button>
+      </div>
+
+      {/* ── KPI Row ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+        <KpiCard icon="inventory_2" label="Total Assets" value={stats.total_assets} />
+        <KpiCard icon="check_circle" label="Assigned" value={stats.assigned_count}
+          sub={`${assignRate}% utilisation`} color="var(--success)" />
+        <KpiCard icon="inbox" label="In Stock" value={stats.by_status['In Stock'] ?? 0}
+          sub="Available to assign" color="var(--primary)" />
+        <KpiCard icon="group" label="Employees" value={stats.total_employees}
+          sub={`${stats.top_assignees.length} with assets`} color="#9c27b0" />
+      </div>
+
+      {/* ── Second KPI Row ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <KpiCard icon="report_problem" label="Missing / Untracked"
+          value={(stats.by_status['Missing'] ?? 0) + (stats.by_status['Unassigned'] ?? 0)}
+          color="var(--danger)" />
+        <KpiCard icon="archive" label="Retired" value={stats.by_status['Retired'] ?? 0}
+          color="var(--text-3)" />
+        <KpiCard icon="cloud_upload" label="Pending Sync" value={stats.pending_sync}
+          sub="Changes not yet pushed to Excel"
+          color={stats.pending_sync > 0 ? '#f29900' : 'var(--success)'} />
+      </div>
+
+      {/* ── Charts Row 1: Status Donut + Condition Donut ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Status Distribution */}
+        <div className="md-card" style={{ padding: 24 }}>
+          <SectionHeader icon="donut_large" title="Status Distribution" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 180, height: 180, flexShrink: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={statusPieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+                    paddingAngle={3} dataKey="value">
+                    {statusPieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                  </Pie>
+                  <Tooltip content={<CustomPieTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+              {statusPieData.map(item => (
+                <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.fill, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>{item.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{item.value}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', width: 36, textAlign: 'right' }}>{item.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Condition Distribution */}
+        <div className="md-card" style={{ padding: 24 }}>
+          <SectionHeader icon="health_and_safety" title="Condition Breakdown" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 180, height: 180, flexShrink: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={condPieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+                    paddingAngle={3} dataKey="value">
+                    {condPieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                  </Pie>
+                  <Tooltip content={<CustomPieTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+              {condPieData.map(item => (
+                <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: item.fill, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: 'var(--text-1)', flex: 1 }}>{item.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{item.value}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', width: 36, textAlign: 'right' }}>{item.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Asset Type Bar Chart ── */}
+      <div className="md-card" style={{ padding: 24 }}>
+        <SectionHeader icon="bar_chart" title="Assets by Type (Top 10)" />
+        <div style={{ height: 260 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={typeBarData} margin={{ top: 4, right: 20, left: 0, bottom: 0 }}
+              barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-2)' }}
+                axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 12, fill: 'var(--text-3)' }} axisLine={false} tickLine={false}
+                allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--primary-bg)' }} />
+              <Bar dataKey="Assets" fill={TYPE_BAR_COLOR} radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── Bottom Row: Top Assignees + Recent Activity ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Top Assignees */}
+        <div className="md-card" style={{ padding: 24 }}>
+          <SectionHeader icon="person_pin" title="Top Assignees" />
+          {stats.top_assignees.length === 0 ? (
+            <p style={{ color: 'var(--text-3)', fontSize: 13 }}>No assets assigned yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {stats.top_assignees.map((a, i) => {
+                const maxCount = stats.top_assignees[0]?.count || 1;
+                const pct = Math.round((a.count / maxCount) * 100);
+                return (
+                  <div key={a.email} style={{ padding: '10px 0', borderBottom: i < stats.top_assignees.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <button
+                        onClick={() => nav(`/employee/${encodeURIComponent(a.email)}`)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontWeight: 500, color: 'var(--primary)', textAlign: 'left' }}
+                      >
+                        {a.name}
+                      </button>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>{a.count}</span>
+                    </div>
+                    <div style={{ height: 4, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 4, transition: 'width .4s ease' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Activity */}
+        <div className="md-card" style={{ padding: 24 }}>
+          <SectionHeader icon="history" title="Recent Activity" />
+          {stats.recent_activity.length === 0 ? (
+            <p style={{ color: 'var(--text-3)', fontSize: 13 }}>No activity recorded yet.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {stats.recent_activity.map((a, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0',
+                  borderBottom: i < stats.recent_activity.length - 1 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: a.action === 'Assign' ? 'var(--success-bg)' : a.action === 'Return' ? 'var(--warn-bg)' : 'var(--primary-bg)',
+                  }}>
+                    <span className="icon icon-sm" style={{
+                      color: a.action === 'Assign' ? 'var(--success)' : a.action === 'Return' ? '#b06000' : 'var(--primary)',
+                      fontSize: 16,
+                    }}>
+                      {a.action === 'Assign' ? 'person_add' : a.action === 'Return' ? 'assignment_return' : 'swap_horiz'}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <button onClick={() => nav(`/asset/${encodeURIComponent(a.asset_id)}`)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, fontWeight: 500, color: 'var(--primary)' }}>
+                        {a.asset_label || a.asset_id}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.action} → {a.employee}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{formatTime(a.timestamp)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
