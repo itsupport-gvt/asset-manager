@@ -231,8 +231,13 @@ function buildMenu() {
                   dialog.showMessageBox({ type: 'info', title: 'No updates', message: 'You are running the latest version.' });
                 }
               })
-              .catch((err) => {
-                dialog.showErrorBox('Update check failed', String(err));
+              .catch(() => {
+                dialog.showMessageBox({
+                  type: 'info',
+                  title: 'Update check failed',
+                  message: 'Could not check for updates.',
+                  detail: 'Make sure you are connected to the internet. If the problem persists, contact your IT administrator.',
+                });
               });
           },
         },

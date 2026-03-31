@@ -1,0 +1,150 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Asset Manager — Build & Release
+#
+# Triggers when you push a version tag, e.g.:
+#   git tag v1.0.1 && git push origin v1.0.1
+#
+# Produces:
+#   - Asset Manager Setup <version>.exe        (NSIS installer)
+#   - Asset Manager Setup <version>.exe.blockmap
+#   - latest.yml                               (auto-update manifest)
+#
+# All three are uploaded as GitHub Release assets automatically.
+# electron-updater on installed clients detects the new latest.yml and
+# downloads + installs the update silently in the background.
+#
+# SETUP (one-time):
+#   1. Create a GitHub repo and push this code.
+#   2. In the repo: Settings → Secrets → Actions → New secret
+#      Name: GH_TOKEN
+#      Value: a GitHub Personal Access Token with "repo" scope
+#   3. Push a v* tag to trigger this workflow.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write   # required to create GitHub Releases
+
+jobs:
+  release:
+    name: Build Windows installer & publish release
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ──────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 3. Python 3.12 ──────────────────────────────────────────────────────
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ── 4. Python venv + backend dependencies ───────────────────────────────
+      - name: Install backend Python dependencies
+        working-directory: backend
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\pip install --upgrade pip --quiet
+          .\.venv\Scripts\pip install -r requirements.txt --quiet
+          .\.venv\Scripts\pip install pyinstaller --quiet
+          Write-Host "Python dependencies installed."
+
+      # ── 5. Build React frontend ─────────────────────────────────────────────
+      - name: Build React frontend
+        working-directory: frontend
+        run: |
+          npm install --no-fund --no-audit
+          npm run build
+
+      # ── 6. Copy report templates into backend/templates/ ────────────────────
+      - name: Copy report templates
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path backend\templates | Out-Null
+          foreach ($tpl in @("handover.docx", "return.docx")) {
+            if (Test-Path $tpl) {
+              Copy-Item $tpl backend\templates\ -Force
+              Write-Host "Copied $tpl"
+            } else {
+              Write-Warning "$tpl not found — PDF export may be unavailable"
+            }
+          }
+
+      # ── 7. PyInstaller — bundle FastAPI backend ──────────────────────────────
+      - name: Run PyInstaller
+        shell: pwsh
+        run: |
+          backend\.venv\Scripts\python -m PyInstaller `
+            backend\backend.spec `
+            --distpath backend\dist `
+            --noconfirm
+          Write-Host "PyInstaller complete."
+
+      # ── 8. Electron — install npm deps ───────────────────────────────────────
+      - name: Install Electron npm dependencies
+        working-directory: electron
+        run: npm install --no-fund --no-audit
+
+      # ── 9. electron-builder — build NSIS installer + publish to GitHub ───────
+      - name: Build and publish Electron app
+        working-directory: electron
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # no code signing certificate
+          WIN_CSC_KEY_PASSWORD: ''
+
+        run: |
+          # ── winCodeSign workaround ─────────────────────────────────────────
+          # electron-builder downloads winCodeSign-2.6.0.7z which contains
+          # macOS symlinks. On Windows without Developer Mode, 7-zip can't
+          # create them and extraction fails. Fix: pre-extract manually and
+          # create empty placeholder files for the two macOS symlinks so that
+          # electron-builder finds the cache dir and skips the download.
+          $WCSIGN_DIR = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
+          $SEVEN_ZIP  = ".\node_modules\7zip-bin\win\x64\7za.exe"
+
+          if (-not (Test-Path $WCSIGN_DIR)) {
+            New-Item -ItemType Directory -Force -Path $WCSIGN_DIR | Out-Null
+            $ARCHIVE     = "$env:TEMP\winCodeSign-2.6.0.7z"
+            $ARCHIVE_URL = "https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z"
+            try {
+              Invoke-WebRequest -Uri $ARCHIVE_URL -OutFile $ARCHIVE -UseBasicParsing
+              & $SEVEN_ZIP x -y "-o$WCSIGN_DIR" $ARCHIVE 2>&1 | Out-Null
+            } catch {
+              Write-Warning "winCodeSign download failed: $_ (build may still succeed)"
+            }
+            foreach ($rel in @(
+              "darwin\10.12\lib\libcrypto.dylib",
+              "darwin\10.12\lib\libssl.dylib"
+            )) {
+              $full = Join-Path $WCSIGN_DIR $rel
+              if (-not (Test-Path $full)) {
+                New-Item -ItemType File -Force -Path $full | Out-Null
+              }
+            }
+            if (Test-Path $ARCHIVE) { Remove-Item $ARCHIVE -ErrorAction SilentlyContinue }
+            Write-Host "winCodeSign cache pre-built."
+          } else {
+            Write-Host "winCodeSign cache already present — skipping download."
+          }
+
+          # ── Build + upload to GitHub Release ──────────────────────────────
+          npx electron-builder --publish always
+          Write-Host "Electron build + publish complete."
