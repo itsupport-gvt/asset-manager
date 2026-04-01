@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -136,15 +137,34 @@ export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const nav = useNavigate();
 
-  function load() {
+  const load = useCallback(() => {
     setLoading(true);
-    fetch('/api/stats').then(r => r.json())
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from_date', fromDate);
+    if (toDate)   params.set('to_date',   toDate);
+    const qs = params.toString();
+    fetch(`/api/stats${qs ? `?${qs}` : ''}`).then(r => r.json())
       .then(d => { setStats(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
+  }, [fromDate, toDate]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function handleClearDates() {
+    setFromDate('');
+    setToDate('');
   }
-  useEffect(() => { load(); }, []);
+
+  function handleExportInventory() {
+    const url = api.exportAssetsCsvUrl({});
+    const a = document.createElement('a');
+    a.href = url;
+    a.click();
+  }
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, color: 'var(--text-2)' }}>
@@ -184,7 +204,7 @@ export function DashboardPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 700, fontSize: 24, color: 'var(--text-1)', margin: 0 }}>Dashboard</h1>
           <p style={{ color: 'var(--text-2)', fontSize: 13, marginTop: 2 }}>
@@ -192,9 +212,38 @@ export function DashboardPage() {
             <span style={{ color: 'var(--text-3)' }}>click cards &amp; charts to filter</span>
           </p>
         </div>
-        <button onClick={load} className="md-btn" style={{ gap: 6, fontSize: 13, color: 'var(--primary)', background: 'var(--primary-bg)', border: 'none' }}>
-          <span className="icon icon-sm">refresh</span>Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Date range */}
+          <input
+            type="date"
+            value={fromDate}
+            onChange={e => setFromDate(e.target.value)}
+            style={{ height: 34, fontSize: 12, padding: '0 8px', border: '1px solid var(--border)', borderRadius: 7, background: 'var(--surface)', color: 'var(--text-1)', outline: 'none' }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>to</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={e => setToDate(e.target.value)}
+            style={{ height: 34, fontSize: 12, padding: '0 8px', border: '1px solid var(--border)', borderRadius: 7, background: 'var(--surface)', color: 'var(--text-1)', outline: 'none' }}
+          />
+          {(fromDate || toDate) && (
+            <button
+              onClick={handleClearDates}
+              style={{ height: 34, padding: '0 8px', background: 'none', border: '1px solid var(--border)', borderRadius: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-3)' }}
+              title="Clear dates"
+            >
+              <span className="icon icon-sm">close</span>
+            </button>
+          )}
+          {/* Export + Refresh */}
+          <button onClick={handleExportInventory} className="md-btn" style={{ gap: 6, fontSize: 13, height: 34, padding: '0 14px' }}>
+            <span className="icon icon-sm">download</span>Export CSV
+          </button>
+          <button onClick={load} className="md-btn" style={{ gap: 6, fontSize: 13, color: 'var(--primary)', background: 'var(--primary-bg)', border: 'none', height: 34, padding: '0 14px' }}>
+            <span className="icon icon-sm">refresh</span>Refresh
+          </button>
+        </div>
       </div>
 
       {/* KPI row 1 */}
@@ -333,7 +382,15 @@ export function DashboardPage() {
 
         {/* Recent Activity */}
         <div className="md-card" style={{ padding: 18 }}>
-          <SectionHeader icon="history" title="Recent Activity" />
+          <SectionHeader
+            icon="history"
+            title={fromDate || toDate
+              ? `Recent Activity (${fromDate || '…'} → ${toDate || '…'})`
+              : 'Recent Activity'
+            }
+            action="View Full Log"
+            onAction={() => nav('/activity')}
+          />
           {stats.recent_activity.length === 0 ? <p style={{ color: 'var(--text-3)', fontSize: 13 }}>No activity yet.</p> : (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {stats.recent_activity.map((a, i) => {

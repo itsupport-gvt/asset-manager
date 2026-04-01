@@ -238,3 +238,71 @@ async def sync_single_asset(asset_id: str, db: Session = Depends(get_db)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Excel sync failed: {str(e)}")
+
+
+@router.get("/assets/export")
+async def export_assets_csv(
+    q:           str = Query(default=""),
+    status:      str = Query(default=""),
+    asset_type:  str = Query(default="", alias="type"),
+    db: Session = Depends(get_db),
+):
+    """
+    Export filtered asset inventory as a CSV download.
+    Params: q (text search), status, type (asset type)
+    """
+    import csv, io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+
+    query = db.query(DBAsset)
+    if status:
+        query = query.filter(DBAsset.status.ilike(status))
+    if asset_type:
+        query = query.filter(DBAsset.asset_type.ilike(asset_type))
+    if q:
+        pattern = f"%{q}%"
+        query = query.filter(
+            or_(
+                DBAsset.asset_id.ilike(pattern),
+                DBAsset.brand.ilike(pattern),
+                DBAsset.model.ilike(pattern),
+                DBAsset.serial_number.ilike(pattern),
+                DBAsset.asset_type.ilike(pattern),
+                DBAsset.assigned_to_email.ilike(pattern),
+            )
+        )
+    assets = query.order_by(DBAsset.asset_type, DBAsset.asset_id).all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "Asset ID", "Asset Type", "Status", "Condition", "Brand", "Model",
+        "Serial Number", "Assigned To", "Employee Display", "Assignment ID",
+        "Date Assigned", "Location", "Storage", "RAM", "Purchase Date",
+        "Purchase Price", "Vendor", "Invoice Ref", "Warranty End", "Notes",
+        "Charger Model", "Charger Serial",
+    ])
+    for a in assets:
+        emp_display = ""
+        if a.assigned_to_email:
+            emp = db.query(DBEmployee).filter(DBEmployee.email == a.assigned_to_email).first()
+            if emp:
+                emp_display = emp.employee_display or emp.full_name or ""
+        writer.writerow([
+            a.asset_id or "", a.asset_type or "", a.status or "", a.condition or "",
+            a.brand or "", a.model or "", a.serial_number or "",
+            a.assigned_to_email or "", emp_display, a.assignment_id or "",
+            a.date_assigned or "", a.location or "", a.storage or "",
+            a.memory_ram or "", a.purchase_date or "", a.purchase_price or "",
+            a.vendor or "", a.invoice_ref or "", a.warranty_end or "",
+            a.notes or "", a.charger_model or "", a.charger_serial or "",
+        ])
+
+    buf.seek(0)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="assets_{ts}.csv"'},
+    )

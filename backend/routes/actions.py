@@ -333,6 +333,17 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         # Leave needs_sync=True so it appears in pending sync queue
         print(f"[create_asset] WARNING: Excel write failed: {e}")
 
+    # Audit log for asset creation
+    db.add(DBAssignmentLog(
+        asset_id=new_asset_id,
+        action="Create",
+        employee_email=None,
+        timestamp=datetime.now(timezone.utc),
+        notes=f"Asset created: {req.asset_type} {req.brand or ''} {req.model or ''}".strip(),
+        needs_sync=False,
+    ))
+    db.commit()
+
     return {
         "success": True,
         "asset_id": new_asset_id,
@@ -386,6 +397,17 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         db_asset.charger_notes = req.charger_notes
 
     db_asset.needs_sync = True
+    db.commit()
+
+    # Audit log for asset update
+    db.add(DBAssignmentLog(
+        asset_id=asset_id,
+        action="Update",
+        employee_email=db_asset.assigned_to_email,
+        timestamp=datetime.now(timezone.utc),
+        notes="Asset record updated",
+        needs_sync=False,
+    ))
     db.commit()
 
     return {"success": True}

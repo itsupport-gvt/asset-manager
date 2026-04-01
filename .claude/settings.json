@@ -24,7 +24,8 @@
       "Bash(SEVEN_ZIP=\"c:/Users/devmu/OneDrive/Desktop/Asset report generator/asset-app/electron/node_modules/7zip-bin/win/x64/7za.exe\":*)",
       "Bash(ARCHIVE=\"/tmp/winCodeSign-2.6.0.7z\")",
       "Bash(__NEW_LINE_eb7e8173c029d184__ echo \"Downloading...\")",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git rm:*)"
     ],
     "additionalDirectories": [
       "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\frontend\\src\\pages",

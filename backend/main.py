@@ -23,6 +23,7 @@ from routes.actions       import router as actions_router
 from routes.stats         import router as stats_router
 from routes.reports       import router as reports_router
 from routes.print_overlay import router as overlay_router
+from routes.activity      import router as activity_router
 from ws.scanner       import scanner_ws, app_ws, scanner_status
 
 from database import engine, Base, get_db, SessionLocal, run_migrations
@@ -108,6 +109,7 @@ app.include_router(actions_router)
 app.include_router(stats_router)
 app.include_router(reports_router)
 app.include_router(overlay_router)
+app.include_router(activity_router)
 
 # ── Sync Routes ───────────────────────────────────────────────────────────────
 

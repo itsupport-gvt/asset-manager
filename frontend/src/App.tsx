@@ -12,8 +12,8 @@ import { EmployeePage } from './pages/EmployeePage';
 import { EmployeeManagerPage } from './pages/EmployeeManagerPage';
 import { NewEmployeePage } from './pages/NewEmployeePage';
 import { DashboardPage } from './pages/DashboardPage';
-import { ReportPage } from './pages/ReportPage';
-import { OverlayPage } from './pages/OverlayPage';
+import { DocumentsPage } from './pages/DocumentsPage';
+import { ActivityLogPage } from './pages/ActivityLogPage';
 
 // ── Quick Lookup ──────────────────────────────────────────────────────────────
 function QuickLookup() {
@@ -344,8 +344,8 @@ export default function App() {
               <NavLink to="/"          icon="grid_view"   label="Browse"    />
               <NavLink to="/new-asset" icon="add_box"     label="Create"    />
               <NavLink to="/employees" icon="group"       label="People"    />
-              <NavLink to="/reports"   icon="description" label="Reports"   />
-              <NavLink to="/overlay"   icon="print"       label="Overlay"   />
+              <NavLink to="/documents" icon="description" label="Documents" />
+              <NavLink to="/activity"  icon="history"     label="Activity"  />
             </nav>
 
             {/* Search */}
@@ -374,8 +374,8 @@ export default function App() {
             <Route path="/employees" element={<EmployeeManagerPage />} />
             <Route path="/new-employee" element={<NewEmployeePage />} />
             <Route path="/employee/:email" element={<EmployeePage />} />
-            <Route path="/reports" element={<ReportPage />} />
-            <Route path="/overlay" element={<OverlayPage />} />
+            <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/activity"  element={<ActivityLogPage />} />
           </Routes>
         </main>
       </div>

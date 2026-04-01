@@ -1,4 +1,4 @@
-import type { Asset, Employee, AssignRequest, ReturnRequest, CreateAssetRequest, ReportPreview, OverlayConfig, CalibrationData, OverlayRow, PrintLogEntry } from './types';
+import type { Asset, Employee, AssignRequest, ReturnRequest, CreateAssetRequest, ReportPreview, OverlayConfig, CalibrationData, OverlayRow, PrintLogEntry, ActivityLogPage } from './types';
 
 const BASE = '';  // same origin — Vite proxies to backend in dev, served by FastAPI in prod
 
@@ -102,5 +102,75 @@ export const api = {
     );
     if (!res.ok) throw new Error(res.statusText);
     return res.json();
+  },
+
+  // ── Report: generate Word (.docx) ──────────────────────────────────────────
+  generateReportDocx: async (body: {
+    employee_email: string;
+    doc_type: string;
+    excluded_ids: string[];
+  }): Promise<Blob> => {
+    const res = await fetch('/api/report/generate-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
+      throw new Error(detail);
+    }
+    return res.blob();
+  },
+
+  // ── Activity Log ───────────────────────────────────────────────────────────
+  getActivity: (params: {
+    page?: number;
+    page_size?: number;
+    action?: string;
+    employee?: string;
+    asset_id?: string;
+    from_date?: string;
+    to_date?: string;
+    q?: string;
+  }): Promise<ActivityLogPage> => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== '')
+          .map(([k, v]) => [k, String(v)])
+      )
+    ).toString();
+    return req<ActivityLogPage>(`/api/activity${qs ? '?' + qs : ''}`);
+  },
+
+  exportActivityCsvUrl: (params: {
+    action?: string;
+    employee?: string;
+    asset_id?: string;
+    from_date?: string;
+    to_date?: string;
+    q?: string;
+  }): string => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== '')
+          .map(([k, v]) => [k, String(v)])
+      )
+    ).toString();
+    return `/api/activity/export${qs ? '?' + qs : ''}`;
+  },
+
+  // ── Asset export CSV ───────────────────────────────────────────────────────
+  exportAssetsCsvUrl: (params: { q?: string; status?: string; type?: string }): string => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== '')
+          .map(([k, v]) => [k, String(v)])
+      )
+    ).toString();
+    return `/api/assets/export${qs ? '?' + qs : ''}`;
   },
 };

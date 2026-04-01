@@ -139,6 +139,27 @@ export interface PrintLogEntry {
     history: { timestamp: string; added_ids: string[] }[];
 }
 
+// ── Activity Log ─────────────────────────────────────────────────────────────
+
+export interface ActivityLogItem {
+    id: number;
+    asset_id: string;
+    asset_label: string;
+    action: string;
+    employee_email: string;
+    employee_name: string;
+    timestamp: string;
+    notes: string;
+}
+
+export interface ActivityLogPage {
+    total: number;
+    page: number;
+    page_size: number;
+    pages: number;
+    items: ActivityLogItem[];
+}
+
 // Scanner Context Payload
 export interface ScanPayload {
     mode: 'context_action' | 'asset_qr' | 'field_scan';

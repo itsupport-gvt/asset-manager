@@ -92,10 +92,10 @@ def _asset_rows(assets: list[DBAsset]) -> list[dict]:
 
 # ── docx table helpers (adapted from main-v2.py) ───────────────────────
 
-def _build_docx(rows: list[dict], emp_name: str, emp_id: str,
-                designation: str, doc_type: str) -> Path:
+def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
+                     designation: str, doc_type: str) -> Path:
+    """Build and save the .docx file. Returns the saved Path (no PDF conversion)."""
     from docxtpl import DocxTemplate
-    from docx2pdf import convert
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -223,7 +223,15 @@ def _build_docx(rows: list[dict], emp_name: str, emp_id: str,
     }
     doc.render(context)
     doc.save(str(out_docx))
+    return out_docx
 
+
+def _build_docx(rows: list[dict], emp_name: str, emp_id: str,
+                designation: str, doc_type: str) -> Path:
+    """Build .docx then convert to PDF. Returns the PDF Path."""
+    from docx2pdf import convert
+    out_docx = _build_docx_file(rows, emp_name, emp_id, designation, doc_type)
+    out_pdf  = out_docx.with_suffix(".pdf")
     convert(str(out_docx), str(out_pdf))
     return out_pdf
 
@@ -311,6 +319,61 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
     return FileResponse(
         str(pdf_path),
         media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/generate-docx")
+def generate_report_docx(body: dict, db: Session = Depends(get_db)):
+    """
+    Generate a Handover or Return Word document (.docx) for an employee.
+
+    Body: { "employee_email": str, "doc_type": "Handover"|"Return", "excluded_ids": [str] }
+    Returns the .docx as a file download (no PDF conversion required).
+    """
+    employee_email = body.get("employee_email", "")
+    doc_type       = body.get("doc_type", "Handover")
+    excluded_ids   = set(body.get("excluded_ids", []))
+
+    if doc_type not in TEMPLATES:
+        raise HTTPException(status_code=400, detail="doc_type must be 'Handover' or 'Return'")
+
+    emp = db.query(DBEmployee).filter(DBEmployee.email == employee_email).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail=f"Employee '{employee_email}' not found")
+
+    assets = (
+        db.query(DBAsset)
+        .filter(
+            DBAsset.assigned_to_email == employee_email,
+            DBAsset.status != "Retired",
+        )
+        .order_by(DBAsset.asset_type, DBAsset.asset_id)
+        .all()
+    )
+
+    all_rows = _asset_rows(assets)
+    rows = [r for r in all_rows if r["asset_id"] not in excluded_ids]
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No assets selected for the report")
+
+    emp_name    = (emp.full_name or "Unknown").title()
+    emp_id      = emp.employee_id or ""
+    designation = (emp.designation or "").title()
+
+    try:
+        docx_path = _build_docx_file(rows, emp_name, emp_id, designation, doc_type)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Word generation failed: {e}")
+
+    filename = f"{doc_type}_{emp_name.replace(' ', '_')}_{emp_id}.docx"
+    return FileResponse(
+        str(docx_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=filename,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

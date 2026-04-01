@@ -79,6 +79,7 @@ export function ReportPage() {
 
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
+  const [generatingDocx, setGeneratingDocx] = useState(false);
   const [genError, setGenError] = useState('');
 
   useEffect(() => {
@@ -145,6 +146,30 @@ export function ReportPage() {
       setGenError(e.message || 'Generation failed');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function generateDocx() {
+    if (!selectedEmp || !preview) return;
+    setGeneratingDocx(true);
+    setGenError('');
+    try {
+      const excludedIds = (preview.rows)
+        .filter(r => !isChecked(r))
+        .map(r => r.asset_id)
+        .filter(Boolean);
+      const blob = await api.generateReportDocx({
+        employee_email: selectedEmp.email,
+        doc_type: docType,
+        excluded_ids: excludedIds,
+      });
+      const name = selectedEmp.full_name.replace(/\s+/g, '_');
+      const empId = selectedEmp.employee_id || '';
+      downloadBlob(blob, `${docType}_${name}_${empId}.docx`);
+    } catch (e: any) {
+      setGenError(e.message || 'Word generation failed');
+    } finally {
+      setGeneratingDocx(false);
     }
   }
 
@@ -317,17 +342,30 @@ export function ReportPage() {
         </div>
       )}
 
-      {/* Generate button */}
+      {/* Generate buttons */}
       {selectedEmp && preview && preview.rows.length > 0 && (
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
             onClick={generate}
-            disabled={generating || includedCount === 0}
+            disabled={generating || generatingDocx || includedCount === 0}
             className="md-btn md-btn-primary"
-            style={{ flex: 1, fontSize: 14, padding: '12px 24px' }}
+            style={{ flex: 1, minWidth: 200, fontSize: 14, padding: '12px 24px' }}
           >
             <span className="icon icon-sm">{generating ? 'hourglass_empty' : 'picture_as_pdf'}</span>
             {generating ? 'Generating PDF…' : `Generate & Download ${docType} PDF`}
+          </button>
+          <button
+            onClick={generateDocx}
+            disabled={generatingDocx || generating || includedCount === 0}
+            className="md-btn"
+            style={{
+              fontSize: 14, padding: '12px 24px',
+              background: 'var(--surface-2)', color: 'var(--text-1)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span className="icon icon-sm">{generatingDocx ? 'hourglass_empty' : 'description'}</span>
+            {generatingDocx ? 'Generating Word…' : 'Download Word (.docx)'}
           </button>
         </div>
       )}

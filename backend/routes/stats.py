@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
@@ -9,7 +9,11 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/stats")
-async def get_stats(db: Session = Depends(get_db)):
+async def get_stats(
+    from_date: str = Query(default=""),
+    to_date:   str = Query(default=""),
+    db: Session = Depends(get_db),
+):
     # ── Totals ────────────────────────────────────────────────────────────────
     total_assets = db.query(DBAsset).count()
     total_employees = db.query(DBEmployee).filter(DBEmployee.is_room == False).count()
@@ -61,13 +65,21 @@ async def get_stats(db: Session = Depends(get_db)):
         name = emp.employee_display or emp.full_name if emp else email
         top_assignees.append({"name": name, "email": email, "count": count})
 
-    # ── Recent Activity (last 10 log entries) ─────────────────────────────────
-    recent_logs = (
-        db.query(DBAssignmentLog)
-        .order_by(DBAssignmentLog.timestamp.desc())
-        .limit(10)
-        .all()
-    )
+    # ── Recent Activity (last 10 log entries, with optional date range filter) ──
+    recent_query = db.query(DBAssignmentLog)
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date).replace(tzinfo=timezone.utc)
+            recent_query = recent_query.filter(DBAssignmentLog.timestamp >= from_dt)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date).replace(tzinfo=timezone.utc)
+            recent_query = recent_query.filter(DBAssignmentLog.timestamp <= to_dt)
+        except ValueError:
+            pass
+    recent_logs = recent_query.order_by(DBAssignmentLog.timestamp.desc()).limit(10).all()
     recent_activity = []
     for log in recent_logs:
         emp = db.query(DBEmployee).filter(DBEmployee.email == log.employee_email).first() if log.employee_email else None
