@@ -227,15 +227,23 @@ function buildMenu() {
           click: () => {
             autoUpdater.checkForUpdates()
               .then((result) => {
-                if (!result || !result.updateInfo) {
-                  dialog.showMessageBox({ type: 'info', title: 'No updates', message: 'You are running the latest version.' });
+                const latest  = result && result.updateInfo && result.updateInfo.version;
+                const current = app.getVersion();
+                if (!latest || latest === current) {
+                  dialog.showMessageBox({
+                    type: 'info',
+                    title: 'Up to date',
+                    message: `You are running the latest version (v${current}).`,
+                  });
                 }
+                // If latest > current, the 'update-available' event fires and
+                // handles the notification + download automatically.
               })
               .catch(() => {
                 dialog.showMessageBox({
                   type: 'info',
                   title: 'Update check failed',
-                  message: 'Could not check for updates.',
+                  message: 'Could not reach the update server.',
                   detail: 'Make sure you are connected to the internet. If the problem persists, contact your IT administrator.',
                 });
               });
