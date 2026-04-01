@@ -44,9 +44,15 @@ def run_migrations():
         ("employees", "employee_display", "TEXT"),
         ("assets",    "asset_id_qr",      "TEXT"),
         ("assets",    "invoice_ref",      "TEXT"),
-        ("assets",    "charger_model",    "TEXT"),
-        ("assets",    "charger_serial",   "TEXT"),
-        ("assets",    "charger_notes",    "TEXT"),
+        ("assets",           "charger_model",    "TEXT"),
+        ("assets",           "charger_serial",   "TEXT"),
+        ("assets",           "charger_notes",    "TEXT"),
+        # v1.2.0 — extended audit fields on assignment_logs
+        ("assignment_logs",  "old_status",       "TEXT"),
+        ("assignment_logs",  "new_status",        "TEXT"),
+        ("assignment_logs",  "changed_fields",   "TEXT"),
+        ("assignment_logs",  "asset_type",       "TEXT"),
+        ("assignment_logs",  "asset_label",      "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

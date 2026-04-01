@@ -54,10 +54,17 @@ class DBAsset(Base):
 class DBAssignmentLog(Base):
     __tablename__ = "assignment_logs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(String, index=True, nullable=False)
-    action = Column(String, nullable=False)  # Assign, Return, Swap
+    id             = Column(Integer, primary_key=True, index=True)
+    asset_id       = Column(String, index=True, nullable=False)
+    action         = Column(String, nullable=False)  # Assign, Return, Create, Update, Bulk Return
     employee_email = Column(String, index=True, nullable=True)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    notes = Column(String, nullable=True)
-    needs_sync = Column(Boolean, default=True)
+    timestamp      = Column(DateTime(timezone=True), server_default=func.now())
+    notes          = Column(String, nullable=True)
+    needs_sync     = Column(Boolean, default=True)
+
+    # ── Extended audit fields (populated from v1.2.0+) ─────────────────────────
+    old_status     = Column(String, nullable=True)   # asset status before action
+    new_status     = Column(String, nullable=True)   # asset status after action
+    changed_fields = Column(String, nullable=True)   # JSON: [{"field","old","new"}, ...]
+    asset_type     = Column(String, nullable=True)   # e.g. "Laptop"
+    asset_label    = Column(String, nullable=True)   # e.g. "Dell XPS 15 LT-2312-0001"

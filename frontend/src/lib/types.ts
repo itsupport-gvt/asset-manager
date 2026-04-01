@@ -145,11 +145,15 @@ export interface ActivityLogItem {
     id: number;
     asset_id: string;
     asset_label: string;
+    asset_type: string;
     action: string;
     employee_email: string;
     employee_name: string;
     timestamp: string;
     notes: string;
+    old_status: string;
+    new_status: string;
+    changed_fields: string;   // raw JSON string: [{field, old, new}, ...]
 }
 
 export interface ActivityLogPage {

@@ -37,6 +37,13 @@ function triggerDownload(url: string) {
   a.click();
 }
 
+interface ChangedField { field: string; old: string; new: string; }
+
+function parseChangedFields(raw: string): ChangedField[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw) as ChangedField[]; } catch { return []; }
+}
+
 // ── sub-components ────────────────────────────────────────────────────────────
 
 function ActionBadge({ action }: { action: string }) {
@@ -50,6 +57,69 @@ function ActionBadge({ action }: { action: string }) {
     }}>
       {action}
     </span>
+  );
+}
+
+function StatusFlow({ from, to }: { from: string; to: string }) {
+  if (!from && !to) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+      {from && (
+        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text-3)' }}>
+          {from}
+        </span>
+      )}
+      {from && to && <span className="icon" style={{ fontSize: 12, color: 'var(--text-3)' }}>arrow_forward</span>}
+      {to && (
+        <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--primary-bg)', color: 'var(--primary)', fontWeight: 600 }}>
+          {to}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ChangedFieldsDetail({ raw }: { raw: string }) {
+  const [open, setOpen] = useState(false);
+  const fields = parseChangedFields(raw);
+  if (!fields.length) return null;
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          fontSize: 11, color: '#7b1fa2', display: 'flex', alignItems: 'center', gap: 2,
+        }}
+      >
+        <span className="icon" style={{ fontSize: 13 }}>{open ? 'expand_less' : 'expand_more'}</span>
+        {fields.length} field{fields.length !== 1 ? 's' : ''} changed
+      </button>
+      {open && (
+        <div style={{
+          marginTop: 5, padding: '8px 10px',
+          background: 'rgba(156,39,176,.05)',
+          border: '1px solid rgba(156,39,176,.2)',
+          borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          {fields.map((f, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11 }}>
+              <span style={{ minWidth: 100, fontWeight: 600, color: 'var(--text-2)', textTransform: 'capitalize', flexShrink: 0 }}>
+                {f.field.replace(/_/g, ' ')}
+              </span>
+              <span style={{ color: 'var(--text-3)', wordBreak: 'break-all' }}>
+                {f.old || '(empty)'}
+              </span>
+              <span className="icon" style={{ fontSize: 12, color: 'var(--text-3)', flexShrink: 0 }}>arrow_forward</span>
+              <span style={{ color: 'var(--primary)', fontWeight: 500, wordBreak: 'break-all' }}>
+                {f.new || '(empty)'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -129,7 +199,6 @@ export function ActivityLogPage() {
   function handleClear() {
     setFilterQ(''); setFilterAction(''); setFilterEmployee('');
     setFilterAssetId(''); setFilterFrom(''); setFilterTo('');
-    // trigger fresh load after state clears via a timeout
     setTimeout(() => load(1), 0);
   }
 
@@ -168,7 +237,7 @@ export function ActivityLogPage() {
             Activity Log
           </h1>
           <p style={{ color: 'var(--text-2)', fontSize: 13, marginTop: 4 }}>
-            Full history of all asset assignments, returns, creations, and updates.
+            Full audit trail — assignments, returns, creates, updates, and field-level changes.
           </p>
         </div>
         <button
@@ -202,7 +271,7 @@ export function ActivityLogPage() {
             <label style={labelStyle}>Search</label>
             <input
               style={inputStyle}
-              placeholder="Asset ID, employee, notes…"
+              placeholder="Asset ID, employee, notes, type…"
               value={filterQ}
               onChange={e => setFilterQ(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -287,7 +356,7 @@ export function ActivityLogPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)' }}>
-                  {['Timestamp', 'Action', 'Asset', 'Employee', 'Notes'].map(h => (
+                  {['Timestamp', 'Action', 'Asset', 'Employee', 'Changes & Notes'].map(h => (
                     <th key={h} style={{
                       padding: '10px 14px', textAlign: 'left', fontSize: 11,
                       fontWeight: 600, color: 'var(--text-3)', whiteSpace: 'nowrap',
@@ -309,38 +378,67 @@ export function ActivityLogPage() {
                   <tr key={item.id} style={{ borderTop: '1px solid var(--border)', transition: 'background .1s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+
+                    {/* Timestamp */}
                     <td style={{ padding: '9px 14px', color: 'var(--text-3)', whiteSpace: 'nowrap', fontSize: 12 }}>
                       {fmtTime(item.timestamp)}
                     </td>
+
+                    {/* Action badge + status flow */}
                     <td style={{ padding: '9px 14px' }}>
                       <ActionBadge action={item.action} />
+                      <StatusFlow from={item.old_status} to={item.new_status} />
                     </td>
+
+                    {/* Asset: type chip + id + label */}
                     <td style={{ padding: '9px 14px' }}>
-                      <button
-                        onClick={() => nav(`/asset/${encodeURIComponent(item.asset_id)}`)}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer',
-                          padding: 0, color: 'var(--primary)', fontFamily: 'monospace',
-                          fontSize: 12, fontWeight: 600,
-                        }}
-                      >
-                        {item.asset_id}
-                      </button>
+                      {item.asset_type && (
+                        <div style={{
+                          display: 'inline-block', fontSize: 10, padding: '1px 6px',
+                          borderRadius: 4, background: 'var(--surface-2)', color: 'var(--text-3)',
+                          fontWeight: 600, marginBottom: 3,
+                        }}>
+                          {item.asset_type}
+                        </div>
+                      )}
+                      <div>
+                        <button
+                          onClick={() => nav(`/asset/${encodeURIComponent(item.asset_id)}`)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: 0, color: 'var(--primary)', fontFamily: 'monospace',
+                            fontSize: 12, fontWeight: 600,
+                          }}
+                        >
+                          {item.asset_id}
+                        </button>
+                      </div>
                       {item.asset_label && item.asset_label !== item.asset_id && (
                         <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{item.asset_label}</div>
                       )}
                     </td>
+
+                    {/* Employee */}
                     <td style={{ padding: '9px 14px', color: 'var(--text-1)' }}>
                       <div>{item.employee_name}</div>
                       {item.employee_email && item.employee_email !== item.employee_name && (
                         <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{item.employee_email}</div>
                       )}
                     </td>
-                    <td style={{
-                      padding: '9px 14px', color: 'var(--text-2)', maxWidth: 220,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {item.notes || '—'}
+
+                    {/* Changes & Notes */}
+                    <td style={{ padding: '9px 14px', color: 'var(--text-2)', maxWidth: 280 }}>
+                      {item.notes && (
+                        <div style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.notes}
+                        </div>
+                      )}
+                      {item.changed_fields && (
+                        <ChangedFieldsDetail raw={item.changed_fields} />
+                      )}
+                      {!item.notes && !item.changed_fields && (
+                        <span style={{ color: 'var(--text-3)' }}>—</span>
+                      )}
                     </td>
                   </tr>
                 ))}

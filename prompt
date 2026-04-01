@@ -10,3 +10,8 @@ also if possible setup a advanced and customizable report view and generation if
 ----
 and before that help me setup the auto update with github integration,
 so that the app will autoupdate in all clients.
+
+
+-----------------
+
+also we need to setup more advanced and complete logs in db at first phase, and then we will implement that to excel write later  

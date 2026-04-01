@@ -59,9 +59,11 @@ def _build_query(
         query = query.filter(
             or_(
                 DBAssignmentLog.asset_id.ilike(pattern),
+                DBAssignmentLog.asset_label.ilike(pattern),
                 DBAssignmentLog.employee_email.ilike(pattern),
                 DBAssignmentLog.action.ilike(pattern),
                 DBAssignmentLog.notes.ilike(pattern),
+                DBAssignmentLog.asset_type.ilike(pattern),
             )
         )
 
@@ -78,21 +80,34 @@ def _enrich(log: DBAssignmentLog, db: Session) -> dict:
         (emp.employee_display or emp.full_name) if emp else (log.employee_email or "—")
     )
 
-    asset = db.query(DBAsset).filter(DBAsset.asset_id == log.asset_id).first()
-    asset_label = (
-        f"{asset.brand or ''} {asset.model or ''}".strip() or log.asset_id
-        if asset else log.asset_id
-    )
+    # Use stored label when available (populated from v1.2.0+), else resolve from DB
+    if log.asset_label:
+        asset_label = log.asset_label
+    else:
+        asset = db.query(DBAsset).filter(DBAsset.asset_id == log.asset_id).first()
+        asset_label = (
+            f"{asset.brand or ''} {asset.model or ''} {log.asset_id}".strip()
+            if asset else log.asset_id
+        )
+
+    asset_type = log.asset_type or ""
+    if not asset_type:
+        asset = db.query(DBAsset).filter(DBAsset.asset_id == log.asset_id).first()
+        asset_type = asset.asset_type if asset else ""
 
     return {
         "id":             log.id,
         "asset_id":       log.asset_id or "",
         "asset_label":    asset_label,
+        "asset_type":     asset_type,
         "action":         log.action or "",
         "employee_email": log.employee_email or "",
         "employee_name":  emp_name,
         "timestamp":      log.timestamp.isoformat() if log.timestamp else "",
         "notes":          log.notes or "",
+        "old_status":     log.old_status or "",
+        "new_status":     log.new_status or "",
+        "changed_fields": log.changed_fields or "",   # raw JSON string
     }
 
 
@@ -116,7 +131,7 @@ def list_activity(
     Returns:
       { total, page, page_size, pages, items: [ActivityLogItem] }
     """
-    base = _build_query(db, action, employee, asset_id, from_date, to_date, q)
+    base  = _build_query(db, action, employee, asset_id, from_date, to_date, q)
     total = base.count()
     rows  = base.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -148,14 +163,20 @@ def export_activity_csv(
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "ID", "Timestamp", "Action", "Asset ID", "Asset Label",
-        "Employee Email", "Employee Name", "Notes",
+        "ID", "Timestamp", "Action",
+        "Asset ID", "Asset Type", "Asset Label",
+        "Employee Email", "Employee Name",
+        "Old Status", "New Status",
+        "Changed Fields", "Notes",
     ])
     for row in rows:
         e = _enrich(row, db)
         writer.writerow([
-            e["id"], e["timestamp"], e["action"], e["asset_id"],
-            e["asset_label"], e["employee_email"], e["employee_name"], e["notes"],
+            e["id"], e["timestamp"], e["action"],
+            e["asset_id"], e["asset_type"], e["asset_label"],
+            e["employee_email"], e["employee_name"],
+            e["old_status"], e["new_status"],
+            e["changed_fields"], e["notes"],
         ])
 
     buf.seek(0)

@@ -1,9 +1,10 @@
 """
-Asset write actions — Assign, Return, Create.
+Asset write actions — Assign, Return, Create, Update.
 Uses local SQLAlchemy DB instead of direct Graph API calls for vastly improved performance.
 Changes are marked `needs_sync = True` to be pushed to Excel later by the SyncService.
 """
 
+import json
 import random
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
@@ -15,6 +16,13 @@ from config import TYPE_CODE_MAP, MASTER_TABLE
 from graph_client import graph
 
 router = APIRouter(prefix="/api")
+
+
+def _asset_label(asset: DBAsset) -> str:
+    """Return a human-readable label for an asset, e.g. 'Dell XPS 15 LT-2312-0001'."""
+    parts = [p for p in [asset.brand, asset.model, asset.asset_id] if p]
+    return " ".join(parts)
+
 
 # ── Assign ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +39,10 @@ async def assign_asset(req: AssignRequest, db: Session = Depends(get_db)):
     new_assign_id = f"AS-{random.randint(10000, 99999)}"
     timestamp = datetime.now(timezone.utc)
 
+    old_status  = db_asset.status
+    label       = _asset_label(db_asset)
+    atype       = db_asset.asset_type
+
     db_asset.status = "Active"
     if req.condition:
         db_asset.condition = req.condition
@@ -39,16 +51,18 @@ async def assign_asset(req: AssignRequest, db: Session = Depends(get_db)):
     db_asset.date_assigned = timestamp.isoformat()
     db_asset.needs_sync = True
 
-    # Log entry
-    log_entry = DBAssignmentLog(
+    db.add(DBAssignmentLog(
         asset_id=req.asset_id,
         action="Assign",
         employee_email=db_emp.email,
         timestamp=timestamp,
         notes=req.notes or "",
-        needs_sync=True
-    )
-    db.add(log_entry)
+        needs_sync=True,
+        old_status=old_status,
+        new_status="Active",
+        asset_type=atype,
+        asset_label=label,
+    ))
     db.commit()
 
     return {"success": True, "assignment_id": new_assign_id, "asset_id": req.asset_id}
@@ -63,7 +77,10 @@ async def return_asset(req: ReturnRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Asset '{req.asset_id}' not found")
 
     returned_from = db_asset.assigned_to_email or ""
-    timestamp = datetime.now(timezone.utc)
+    old_status    = db_asset.status
+    label         = _asset_label(db_asset)
+    atype         = db_asset.asset_type
+    timestamp     = datetime.now(timezone.utc)
 
     db_asset.status = "In Stock"
     if req.condition:
@@ -73,15 +90,18 @@ async def return_asset(req: ReturnRequest, db: Session = Depends(get_db)):
     db_asset.date_assigned = ""
     db_asset.needs_sync = True
 
-    log_entry = DBAssignmentLog(
+    db.add(DBAssignmentLog(
         asset_id=req.asset_id,
         action="Return",
         employee_email=returned_from,
         timestamp=timestamp,
         notes=req.notes or "",
-        needs_sync=True
-    )
-    db.add(log_entry)
+        needs_sync=True,
+        old_status=old_status,
+        new_status="In Stock",
+        asset_type=atype,
+        asset_label=label,
+    ))
     db.commit()
 
     return {"success": True, "returned_from": returned_from, "asset_id": req.asset_id}
@@ -102,8 +122,8 @@ async def bulk_return(employee_email: str, body: dict, db: Session = Depends(get
     items  = body.get("items", [])
     reason = body.get("reason", "Bulk Return")
 
-    returned = []
-    failed   = []
+    returned  = []
+    failed    = []
     timestamp = datetime.now(timezone.utc)
 
     for item in items:
@@ -120,24 +140,31 @@ async def bulk_return(employee_email: str, body: dict, db: Session = Depends(get
             continue
 
         returned_from = db_asset.assigned_to_email
+        old_status    = db_asset.status
+        label         = _asset_label(db_asset)
+        atype         = db_asset.asset_type
 
-        db_asset.status           = "In Stock"
+        db_asset.status            = "In Stock"
         db_asset.assigned_to_email = None
-        db_asset.assignment_id    = ""
-        db_asset.date_assigned    = ""
-        db_asset.needs_sync       = True
+        db_asset.assignment_id     = ""
+        db_asset.date_assigned     = ""
+        db_asset.needs_sync        = True
         if condition:
             db_asset.condition = condition
 
-        log_entry = DBAssignmentLog(
+        note_str = f"[{reason}] {notes}".strip(" []") if notes else f"Bulk return — {reason}"
+        db.add(DBAssignmentLog(
             asset_id=asset_id,
             action="Return",
             employee_email=returned_from,
             timestamp=timestamp,
-            notes=f"[{reason}] {notes}".strip(" []") if notes else f"Bulk return — {reason}",
+            notes=note_str,
             needs_sync=True,
-        )
-        db.add(log_entry)
+            old_status=old_status,
+            new_status="In Stock",
+            asset_type=atype,
+            asset_label=label,
+        ))
         returned.append(asset_id)
 
     db.commit()
@@ -173,6 +200,9 @@ async def bulk_assign(employee_email: str, body: dict, db: Session = Depends(get
             continue
 
         new_assign_id = f"AS-{random.randint(10000, 99999)}"
+        old_status    = db_asset.status
+        label         = _asset_label(db_asset)
+        atype         = db_asset.asset_type
 
         db_asset.status            = "Active"
         db_asset.assigned_to_email = db_emp.email
@@ -180,15 +210,18 @@ async def bulk_assign(employee_email: str, body: dict, db: Session = Depends(get
         db_asset.date_assigned     = timestamp.isoformat()
         db_asset.needs_sync        = True
 
-        log_entry = DBAssignmentLog(
+        db.add(DBAssignmentLog(
             asset_id=asset_id,
             action="Assign",
             employee_email=db_emp.email,
             timestamp=timestamp,
             notes="Bulk assign",
             needs_sync=True,
-        )
-        db.add(log_entry)
+            old_status=old_status,
+            new_status="Active",
+            asset_type=atype,
+            asset_label=label,
+        ))
         assigned.append(asset_id)
 
     db.commit()
@@ -207,13 +240,13 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         )
 
     serial_up = req.serial_number.upper().strip()
-    
+
     # Duplicate check
     existing = db.query(DBAsset).filter(
-        DBAsset.serial_number == serial_up, 
+        DBAsset.serial_number == serial_up,
         DBAsset.asset_type == req.asset_type
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=409,
@@ -244,7 +277,7 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
             except ValueError:
                 pass
 
-    new_asset_id = f"{id_prefix}-{(max_seq + 1):04d}"
+    new_asset_id    = f"{id_prefix}-{(max_seq + 1):04d}"
     new_asset_id_qr = new_asset_id.replace("-", "")
 
     new_asset = DBAsset(
@@ -330,10 +363,10 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         db.commit()
         print(f"[create_asset] Pushed '{new_asset_id}' to Excel MasterTable")
     except Exception as e:
-        # Leave needs_sync=True so it appears in pending sync queue
         print(f"[create_asset] WARNING: Excel write failed: {e}")
 
     # Audit log for asset creation
+    asset_label = " ".join(p for p in [req.asset_type, req.brand, req.model, new_asset_id] if p)
     db.add(DBAssignmentLog(
         asset_id=new_asset_id,
         action="Create",
@@ -341,6 +374,10 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         timestamp=datetime.now(timezone.utc),
         notes=f"Asset created: {req.asset_type} {req.brand or ''} {req.model or ''}".strip(),
         needs_sync=False,
+        old_status=None,
+        new_status=req.status,
+        asset_type=req.asset_type,
+        asset_label=asset_label,
     ))
     db.commit()
 
@@ -351,12 +388,48 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
     }
 
 
+# ── Update ────────────────────────────────────────────────────────────────────
+
 @router.post("/asset/update/{asset_id}")
 async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Depends(get_db)):
     db_asset = db.query(DBAsset).filter(DBAsset.asset_id == asset_id).first()
     if not db_asset:
         raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found")
 
+    # ── Capture before-state for change diff ──────────────────────────────────
+    old_status = db_asset.status
+
+    _track = [
+        ("asset_type",    req.asset_type),
+        ("status",        req.status),
+        ("condition",     req.condition),
+        ("brand",         req.brand),
+        ("model",         req.model),
+        ("serial_number", req.serial_number.upper().strip() if req.serial_number else req.serial_number),
+        ("storage",       req.storage),
+        ("memory_ram",    req.memory_ram),
+        ("purchase_date", req.purchase_date),
+        ("purchase_price",req.purchase_price),
+        ("vendor",        req.vendor),
+        ("invoice_ref",   req.invoice_ref),
+        ("warranty_end",  req.warranty_end),
+        ("location",      req.location),
+        ("notes",         req.notes),
+        ("pin_password",  req.pin_password),
+        ("charger_model", req.charger_model),
+        ("charger_serial",req.charger_serial),
+        ("charger_notes", req.charger_notes),
+    ]
+    diffs = []
+    for field, new_val in _track:
+        if new_val is None:
+            continue
+        old_val   = getattr(db_asset, field) or ""
+        new_clean = new_val or ""
+        if str(old_val) != str(new_clean):
+            diffs.append({"field": field, "old": str(old_val), "new": str(new_clean)})
+
+    # ── Apply changes ──────────────────────────────────────────────────────────
     if req.asset_type:
         db_asset.asset_type = req.asset_type
     if req.status:
@@ -399,14 +472,24 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
     db_asset.needs_sync = True
     db.commit()
 
-    # Audit log for asset update
+    # ── Audit log ──────────────────────────────────────────────────────────────
+    label    = _asset_label(db_asset)
+    note_str = (
+        f"Updated: {', '.join(d['field'] for d in diffs)}" if diffs
+        else "Record saved (no field changes)"
+    )
     db.add(DBAssignmentLog(
         asset_id=asset_id,
         action="Update",
         employee_email=db_asset.assigned_to_email,
         timestamp=datetime.now(timezone.utc),
-        notes="Asset record updated",
+        notes=note_str,
         needs_sync=False,
+        old_status=old_status,
+        new_status=db_asset.status,
+        changed_fields=json.dumps(diffs) if diffs else None,
+        asset_type=db_asset.asset_type,
+        asset_label=label,
     ))
     db.commit()
 

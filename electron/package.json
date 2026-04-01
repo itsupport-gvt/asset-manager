@@ -1,7 +1,7 @@
 {
   "name": "asset-manager",
-  "version": "1.0.1",
-  "description": "Gravity Asset Manager — Desktop App",
+  "version": "1.2.0",
+  "description": "Gravity Asset Manager \u00e2\u20ac\u201d Desktop App",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -22,7 +22,9 @@
       {
         "from": "../backend/dist/asset-backend",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
