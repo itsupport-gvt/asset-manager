@@ -175,12 +175,13 @@ function spawnBackend(port) {
 
 // ── Kill backend ──────────────────────────────────────────────────────────────
 function killBackend() {
-  if (!backendProc) return;
-  try {
-    // taskkill /T kills the entire process tree (important for uvicorn workers)
-    execSync(`taskkill /PID ${backendProc.pid} /T /F`, { stdio: 'ignore' });
-  } catch {}
-  backendProc = null;
+  // Kill tracked PID first
+  if (backendProc) {
+    try { execSync(`taskkill /PID ${backendProc.pid} /T /F`, { stdio: 'ignore' }); } catch {}
+    backendProc = null;
+  }
+  // Also kill by name — handles orphaned processes from failed/partial updates
+  try { execSync('taskkill /IM asset-backend.exe /T /F', { stdio: 'ignore' }); } catch {}
 }
 
 // ── App menu ──────────────────────────────────────────────────────────────────
@@ -288,6 +289,9 @@ ipcMain.handle('get-port', () => backendPort);
 
 // ── Main launch sequence ──────────────────────────────────────────────────────
 async function launchApp() {
+  // Kill any orphaned backend from a previous partial update before spawning a new one
+  try { execSync('taskkill /IM asset-backend.exe /T /F', { stdio: 'ignore' }); } catch {}
+
   createSplash();
 
   try {
@@ -344,5 +348,10 @@ autoUpdater.on('update-downloaded', () => {
     buttons: ['Restart Now', 'Later'],
     message: 'Update downloaded. Restart to apply?',
   });
-  if (choice === 0) autoUpdater.quitAndInstall();
+  if (choice === 0) {
+    // Kill backend BEFORE quitAndInstall so Windows fully releases the exe
+    // file handle before the NSIS installer tries to overwrite it.
+    killBackend();
+    setTimeout(() => autoUpdater.quitAndInstall(true, true), 2000);
+  }
 });
