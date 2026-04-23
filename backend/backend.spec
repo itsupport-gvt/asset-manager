@@ -36,7 +36,8 @@ for pkg in pkgs:
         pass  # package not installed — skip
 
 # ── Static / template assets ───────────────────────────────────────────────────
-src_dir = os.path.abspath('backend')
+# Use SPEC path (reliable regardless of CWD when pyinstaller is invoked)
+src_dir = os.path.dirname(os.path.abspath(SPEC))
 
 extra_datas = [
     (os.path.join(src_dir, 'static'),         'static'),

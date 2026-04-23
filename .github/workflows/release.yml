@@ -68,9 +68,22 @@ jobs:
       # ── 5. Build React frontend ─────────────────────────────────────────────
       - name: Build React frontend
         working-directory: frontend
+        shell: pwsh
         run: |
-          npm install --no-fund --no-audit
-          npm run build
+          npm ci --no-fund --no-audit
+          npx tsc --noEmit
+          npx vite build
+          # Verify output
+          if (!(Test-Path "..\backend\static\index.html")) {
+            Write-Error "Frontend build FAILED — backend/static/index.html missing!"; exit 1
+          }
+          $jsFile = Get-ChildItem "..\backend\static\assets\*.js" | Select-Object -First 1
+          if (!$jsFile) { Write-Error "No JS bundle found!"; exit 1 }
+          $content = Get-Content $jsFile.FullName -Raw
+          if ($content -notmatch "SwapPage|swapAsset|pullLogs") {
+            Write-Error "JS bundle does not contain new features (SwapPage/pullLogs missing)!"; exit 1
+          }
+          Write-Host "Frontend build verified. Bundle: $($jsFile.Name) ($([Math]::Round($jsFile.Length/1KB))KB)"
 
       # ── 6. Copy report templates into backend/templates/ ────────────────────
       - name: Copy report templates
