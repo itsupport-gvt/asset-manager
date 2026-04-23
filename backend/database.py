@@ -53,6 +53,7 @@ def run_migrations():
         ("assignment_logs",  "changed_fields",   "TEXT"),
         ("assignment_logs",  "asset_type",       "TEXT"),
         ("assignment_logs",  "asset_label",      "TEXT"),
+        ("assignment_logs",  "source_log_id",   "TEXT"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

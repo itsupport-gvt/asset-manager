@@ -68,3 +68,4 @@ class DBAssignmentLog(Base):
     changed_fields = Column(String, nullable=True)   # JSON: [{"field","old","new"}, ...]
     asset_type     = Column(String, nullable=True)   # e.g. "Laptop"
     asset_label    = Column(String, nullable=True)   # e.g. "Dell XPS 15 LT-2312-0001"
+    source_log_id  = Column(String, nullable=True, index=True)  # Excel LogID — used for dedup on pull

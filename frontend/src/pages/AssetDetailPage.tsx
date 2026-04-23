@@ -156,7 +156,7 @@ export function AssetDetailPage() {
             )}
             {isAssigned && (
               <>
-                <button onClick={() => nav(`/assign/${encodeURIComponent(asset.asset_id)}`)} className="md-btn" style={{ background: 'var(--primary-bg)', color: 'var(--primary)', border: '1px solid rgba(26,115,232,.2)' }}>
+                <button onClick={() => nav(`/swap/${encodeURIComponent(asset.asset_id)}`)} className="md-btn" style={{ background: 'var(--primary-bg)', color: 'var(--primary)', border: '1px solid rgba(26,115,232,.2)' }}>
                   <span className="icon icon-sm">swap_horiz</span> Swap
                 </button>
                 <button onClick={() => nav(`/return/${encodeURIComponent(asset.asset_id)}`)} className="md-btn" style={{ background: 'var(--warn-bg)', color: '#b06000', border: '1px solid rgba(249,171,0,.3)' }}>

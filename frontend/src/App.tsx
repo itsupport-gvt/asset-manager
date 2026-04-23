@@ -14,6 +14,7 @@ import { NewEmployeePage } from './pages/NewEmployeePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
+import { SwapPage } from './pages/SwapPage';
 
 // ── Quick Lookup ──────────────────────────────────────────────────────────────
 function QuickLookup() {
@@ -191,6 +192,17 @@ function SyncButton() {
     setSyncing(false); setTimeout(() => setStatus(''), 3000);
   }
 
+  async function pullLogs() {
+    setSyncing(true); setOpen(false); setStatus('Importing logs…');
+    try {
+      const r = await fetch('/api/sync/pull-logs', { method: 'POST' });
+      const d = await r.json();
+      setStatus(d.success ? `Logs: +${d.imported}` : 'Log pull failed');
+      fetchStatus();
+    } catch { setStatus('Log pull failed'); }
+    setSyncing(false); setTimeout(() => setStatus(''), 4000);
+  }
+
   const hasPending = pendingCount > 0;
 
   return (
@@ -244,6 +256,18 @@ function SyncButton() {
           >
             <span className="icon icon-sm">cloud_download</span>
             Pull from Excel
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '2px 6px' }} />
+          <button
+            onClick={pullLogs}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+              background: 'none', border: 'none', borderRadius: 6, cursor: 'pointer',
+              color: 'var(--text-2)', textAlign: 'left', width: '100%', fontSize: 13,
+            }}
+          >
+            <span className="icon icon-sm">history</span>
+            Pull Activity Logs
           </button>
         </div>
       )}
@@ -376,6 +400,7 @@ export default function App() {
             <Route path="/employee/:email" element={<EmployeePage />} />
             <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/activity"  element={<ActivityLogPage />} />
+            <Route path="/swap/:id"  element={<SwapPage />} />
           </Routes>
         </main>
       </div>

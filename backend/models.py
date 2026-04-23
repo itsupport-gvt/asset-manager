@@ -81,3 +81,16 @@ class CreateEmployeeRequest(BaseModel):
     full_name: str
     email: str
     designation: str
+
+
+class SwapRequest(BaseModel):
+    mode: str                               # "person" | "stock"
+    asset_id: str                           # current asset being swapped
+    # Person-swap fields
+    new_employee_email: Optional[str] = None
+    # Stock-swap fields
+    replacement_asset_id: Optional[str] = None
+    return_status: Optional[str] = "In Stock"   # status to set on returned asset
+    # Shared
+    condition: Optional[str] = ""
+    notes: Optional[str] = ""

@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models_db import DBAsset, DBEmployee, DBAssignmentLog
-from models import AssignRequest, ReturnRequest, CreateAssetRequest
+from models import AssignRequest, ReturnRequest, CreateAssetRequest, SwapRequest
 from config import TYPE_CODE_MAP, MASTER_TABLE
 from graph_client import graph
 
@@ -373,7 +373,7 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         employee_email=None,
         timestamp=datetime.now(timezone.utc),
         notes=f"Asset created: {req.asset_type} {req.brand or ''} {req.model or ''}".strip(),
-        needs_sync=False,
+        needs_sync=True,
         old_status=None,
         new_status=req.status,
         asset_type=req.asset_type,
@@ -484,7 +484,7 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         employee_email=db_asset.assigned_to_email,
         timestamp=datetime.now(timezone.utc),
         notes=note_str,
-        needs_sync=False,
+        needs_sync=True,
         old_status=old_status,
         new_status=db_asset.status,
         changed_fields=json.dumps(diffs) if diffs else None,
@@ -494,3 +494,136 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
     db.commit()
 
     return {"success": True}
+
+
+# ── Swap ──────────────────────────────────────────────────────────────────────
+
+@router.post("/asset/swap")
+async def swap_asset(req: SwapRequest, db: Session = Depends(get_db)):
+    """
+    Two swap modes:
+      - "person": same asset reassigned to a different employee.
+                  Returns from current employee, assigns to new employee.
+      - "stock":  return current asset (with custom return_status),
+                  assign a different in-stock asset to the same employee.
+    Both modes log a "Swap" action for each asset involved.
+    """
+    timestamp = datetime.now(timezone.utc)
+
+    # ── Load current asset ─────────────────────────────────────────────────────
+    db_asset = db.query(DBAsset).filter(DBAsset.asset_id == req.asset_id).first()
+    if not db_asset:
+        raise HTTPException(status_code=404, detail=f"Asset '{req.asset_id}' not found")
+    if not db_asset.assigned_to_email:
+        raise HTTPException(status_code=400, detail=f"Asset '{req.asset_id}' is not currently assigned")
+
+    current_employee_email = db_asset.assigned_to_email
+    old_label = _asset_label(db_asset)
+    atype     = db_asset.asset_type
+
+    # ── PERSON SWAP ───────────────────────────────────────────────────────────
+    if req.mode == "person":
+        if not req.new_employee_email:
+            raise HTTPException(status_code=400, detail="new_employee_email is required for person swap")
+
+        db_new_emp = db.query(DBEmployee).filter(DBEmployee.email == req.new_employee_email).first()
+        if not db_new_emp:
+            raise HTTPException(status_code=404, detail=f"Employee '{req.new_employee_email}' not found")
+
+        new_assign_id = f"AS-{random.randint(10000, 99999)}"
+        old_status    = db_asset.status
+
+        # Re-assign the same asset to new employee
+        db_asset.assigned_to_email = db_new_emp.email
+        db_asset.assignment_id     = new_assign_id
+        db_asset.date_assigned     = timestamp.isoformat()
+        if req.condition:
+            db_asset.condition = req.condition
+        db_asset.needs_sync = True
+
+        swap_note = f"Swapped from {current_employee_email} → {db_new_emp.email}. {req.notes or ''}".strip()
+
+        db.add(DBAssignmentLog(
+            asset_id=req.asset_id,
+            action="Swap",
+            employee_email=db_new_emp.email,
+            timestamp=timestamp,
+            notes=swap_note,
+            needs_sync=True,
+            old_status=old_status,
+            new_status="Active",
+            asset_type=atype,
+            asset_label=old_label,
+        ))
+        db.commit()
+        return {"success": True, "mode": "person", "asset_id": req.asset_id, "new_employee": db_new_emp.email}
+
+    # ── STOCK SWAP ────────────────────────────────────────────────────────────
+    elif req.mode == "stock":
+        if not req.replacement_asset_id:
+            raise HTTPException(status_code=400, detail="replacement_asset_id is required for stock swap")
+
+        db_replacement = db.query(DBAsset).filter(DBAsset.asset_id == req.replacement_asset_id).first()
+        if not db_replacement:
+            raise HTTPException(status_code=404, detail=f"Replacement asset '{req.replacement_asset_id}' not found")
+        if db_replacement.assigned_to_email:
+            raise HTTPException(status_code=400, detail=f"Replacement asset '{req.replacement_asset_id}' is already assigned to {db_replacement.assigned_to_email}")
+
+        old_status       = db_asset.status
+        repl_old_status  = db_replacement.status
+        repl_label       = _asset_label(db_replacement)
+        new_assign_id    = f"AS-{random.randint(10000, 99999)}"
+        return_status    = req.return_status or "In Stock"
+
+        # Return current asset to chosen status
+        db_asset.status            = return_status
+        db_asset.assigned_to_email = None
+        db_asset.assignment_id     = ""
+        db_asset.date_assigned     = ""
+        db_asset.needs_sync        = True
+        if req.condition:
+            db_asset.condition = req.condition
+
+        return_note = f"Swapped out — replaced by {req.replacement_asset_id}. {req.notes or ''}".strip()
+        db.add(DBAssignmentLog(
+            asset_id=req.asset_id,
+            action="Swap",
+            employee_email=current_employee_email,
+            timestamp=timestamp,
+            notes=return_note,
+            needs_sync=True,
+            old_status=old_status,
+            new_status=return_status,
+            asset_type=atype,
+            asset_label=old_label,
+        ))
+
+        # Assign replacement asset to same employee
+        db_replacement.status            = "Active"
+        db_replacement.assigned_to_email = current_employee_email
+        db_replacement.assignment_id     = new_assign_id
+        db_replacement.date_assigned     = timestamp.isoformat()
+        db_replacement.needs_sync        = True
+
+        assign_note = f"Swap replacement for {req.asset_id}. {req.notes or ''}".strip()
+        db.add(DBAssignmentLog(
+            asset_id=req.replacement_asset_id,
+            action="Swap",
+            employee_email=current_employee_email,
+            timestamp=timestamp,
+            notes=assign_note,
+            needs_sync=True,
+            old_status=repl_old_status,
+            new_status="Active",
+            asset_type=db_replacement.asset_type,
+            asset_label=repl_label,
+        ))
+        db.commit()
+        return {
+            "success": True, "mode": "stock",
+            "returned_asset": req.asset_id, "return_status": return_status,
+            "assigned_asset": req.replacement_asset_id, "employee": current_employee_email,
+        }
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown swap mode '{req.mode}'. Use 'person' or 'stock'.")

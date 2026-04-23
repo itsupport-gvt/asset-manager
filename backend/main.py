@@ -28,7 +28,7 @@ from ws.scanner       import scanner_ws, app_ws, scanner_status
 
 from database import engine, Base, get_db, SessionLocal, run_migrations
 from models_db import DBAsset, DBEmployee
-from services.sync_service import sync_from_excel, sync_to_excel, get_current_sync_status
+from services.sync_service import sync_from_excel, sync_to_excel, sync_logs_from_excel, get_current_sync_status
 from config import NGROK_URL
 
 import traceback
@@ -129,6 +129,16 @@ def pull_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         sync_from_excel(db)
         return {"success": True, "message": "Pulled changes from Excel."}
+    except Exception as e:
+        traceback.print_exc()
+        return {"success": False, "detail": str(e)}
+
+@app.post("/api/sync/pull-logs")
+def pull_logs_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
+    """Pulls historical activity logs from Excel Assignment_Log table into local DB (dedup-safe)."""
+    try:
+        result = sync_logs_from_excel(db)
+        return {"success": True, "message": f"Imported {result['imported']} logs, skipped {result['skipped']} duplicates.", **result}
     except Exception as e:
         traceback.print_exc()
         return {"success": False, "detail": str(e)}

@@ -162,6 +162,20 @@ export const api = {
     return `/api/activity/export${qs ? '?' + qs : ''}`;
   },
 
+  // ── Sync: Pull Logs ────────────────────────────────────────────────────────
+  pullLogs: () => req<{ success: boolean; imported: number; skipped: number; total: number; message?: string; detail?: string }>('/api/sync/pull-logs', { method: 'POST' }),
+
+  // ── Swap ──────────────────────────────────────────────────────────────────
+  swapAsset: (body: {
+    mode: 'person' | 'stock';
+    asset_id: string;
+    new_employee_email?: string;
+    replacement_asset_id?: string;
+    return_status?: string;
+    condition?: string;
+    notes?: string;
+  }) => req<{ success: boolean; mode: string; [key: string]: unknown }>('/api/asset/swap', json(body)),
+
   // ── Asset export CSV ───────────────────────────────────────────────────────
   exportAssetsCsvUrl: (params: { q?: string; status?: string; type?: string }): string => {
     const qs = new URLSearchParams(
