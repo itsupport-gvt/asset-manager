@@ -723,7 +723,7 @@ export function EmployeePage() {
                       style={{ flex: 1, padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'none', border: 'none', borderRight: '1px solid var(--border)', color: '#b06000', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
                       <span className="icon icon-sm">assignment_return</span> Return
                     </button>
-                    <button onClick={() => nav(`/assign/${encodeURIComponent(a.asset_id)}`)}
+                    <button onClick={() => nav(`/swap/${encodeURIComponent(a.asset_id)}`)}
                       style={{ flex: 1, padding: '10px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
                       <span className="icon icon-sm">swap_horiz</span> Swap
                     </button>
