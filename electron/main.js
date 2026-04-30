@@ -125,6 +125,12 @@ function createMainWindow(port) {
     minWidth: 960, minHeight: 600,
     title: 'Asset Manager',
     show: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#161b22',
+      symbolColor: '#8b949e',
+      height: 48,
+    },
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -184,89 +190,9 @@ function killBackend() {
   try { execSync('taskkill /IM asset-backend.exe /T /F', { stdio: 'ignore' }); } catch {}
 }
 
-// ── App menu ──────────────────────────────────────────────────────────────────
+// ── App menu (hidden — actions exposed via IPC instead) ───────────────────────
 function buildMenu() {
-  const template = [
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'Settings…',
-          accelerator: 'CmdOrCtrl+,',
-          click: () => {
-            if (setupWindow && !setupWindow.isDestroyed()) {
-              setupWindow.focus();
-            } else {
-              createSetupWindow();
-            }
-          },
-        },
-        { type: 'separator' },
-        { role: 'quit', label: 'Exit' },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { type: 'separator' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-      ],
-    },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'Check for Updates',
-          click: () => {
-            autoUpdater.checkForUpdates()
-              .then((result) => {
-                const latest  = result && result.updateInfo && result.updateInfo.version;
-                const current = app.getVersion();
-                if (!latest || latest === current) {
-                  dialog.showMessageBox({
-                    type: 'info',
-                    title: 'Up to date',
-                    message: `You are running the latest version (v${current}).`,
-                  });
-                }
-                // If latest > current, the 'update-available' event fires and
-                // handles the notification + download automatically.
-              })
-              .catch(() => {
-                dialog.showMessageBox({
-                  type: 'info',
-                  title: 'Update check failed',
-                  message: 'Could not reach the update server.',
-                  detail: 'Make sure you are connected to the internet. If the problem persists, contact your IT administrator.',
-                });
-              });
-          },
-        },
-        { type: 'separator' },
-        {
-          label: `About Asset Manager v${app.getVersion()}`,
-          click: () => {
-            dialog.showMessageBox({
-              type: 'info',
-              title: 'Asset Manager',
-              message: `Asset Manager v${app.getVersion()}`,
-              detail: 'Gravity BP\nAsset tracking and report generation.',
-            });
-          },
-        },
-      ],
-    },
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  Menu.setApplicationMenu(null);
 }
 
 // ── IPC handlers ─────────────────────────────────────────────────────────────
@@ -286,6 +212,38 @@ ipcMain.handle('setup-complete', async (_, cfg) => {
 });
 
 ipcMain.handle('get-port', () => backendPort);
+
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('open-settings', () => {
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.focus();
+  } else {
+    createSetupWindow();
+  }
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    const latest  = result && result.updateInfo && result.updateInfo.version;
+    const current = app.getVersion();
+    if (!latest || latest === current) {
+      dialog.showMessageBox({ type: 'info', title: 'Up to date', message: `You are on the latest version (v${current}).` });
+    }
+  } catch {
+    dialog.showMessageBox({ type: 'info', title: 'Update check failed', message: 'Could not reach the update server.', detail: 'Check your internet connection.' });
+  }
+});
+
+ipcMain.handle('show-about', () => {
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Asset Manager',
+    message: `Asset Manager  v${app.getVersion()}`,
+    detail: 'Gravity BP — Asset tracking and report generation.',
+  });
+});
 
 // ── Main launch sequence ──────────────────────────────────────────────────────
 async function launchApp() {

@@ -16,6 +16,9 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { SwapPage } from './pages/SwapPage';
 
+// ── Electron IPC bridge (safe fallback for non-Electron / dev) ────────────────
+const ipc = (window as any).assetManager ?? {};
+
 // ── Quick Lookup ──────────────────────────────────────────────────────────────
 function QuickLookup() {
   const [q, setQ] = useState('');
@@ -29,32 +32,15 @@ function QuickLookup() {
   }
 
   return (
-    // <div className="flex gap-2 items-center">
-    //   <div className="relative">
-    //     <span className="icon icon-sm absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-3)' }}>search</span>
-    //     <input
-    //       type="text"
-    //       value={q}
-    //       onChange={e => setQ(e.target.value)}
-    //       onKeyDown={e => e.key === 'Enter' && go()}
-    //       placeholder="Asset ID or scan..."
-    //       className="md-input pl-9 text-sm w-44 lg:w-60"
-    //       style={{ borderRadius: 24, background: 'var(--surface-2)', border: '1px solid transparent' }}
-    //     />
-    //   </div>
-    //   <button onClick={go} className="md-btn md-btn-primary" style={{ padding: '8px 16px', fontSize: 13 }}>
-    //     Go
-    //   </button>
-    // </div>
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <span className="icon" style={{ position: 'absolute', left: 10, fontSize: 18, color: 'var(--text-3)', pointerEvents: 'none', zIndex: 1 }}>search</span>
+      <span className="icon" style={{ position: 'absolute', left: 9, fontSize: 15, color: 'var(--text-3)', pointerEvents: 'none', zIndex: 1 }}>search</span>
       <input
         type="text" value={q}
         onChange={e => setQ(e.target.value)}
         onKeyDown={e => e.key === 'Enter' && go()}
         placeholder="Asset ID…"
         className="md-input"
-        style={{ borderRadius: 20, background: 'var(--surface-2)', border: '1px solid var(--border)', paddingLeft: 36, paddingRight: 12, height: 36, width: 160, fontSize: 13 }}
+        style={{ borderRadius: 6, paddingLeft: 30, paddingRight: 10, height: 32, width: 148, fontSize: 12 }}
       />
     </div>
   );
@@ -83,49 +69,45 @@ function ScannerQRButton({ connected }: { connected: boolean }) {
         onClick={() => { setOpen(true); setLoaded(false); }}
         className="md-btn"
         style={{
-          padding: '7px 10px', fontSize: 13, gap: 0,
-          background: connected ? 'var(--success-bg)' : 'var(--surface-2)',
+          padding: '5px 9px', fontSize: 12, gap: 0,
+          background: connected ? 'rgba(63,185,80,.12)' : 'var(--surface-2)',
           color: connected ? 'var(--success)' : 'var(--text-2)',
-          border: `1px solid ${connected ? '#ceead6' : 'var(--border)'}`,
-          borderRadius: 8, minWidth: 0,
+          border: `1px solid ${connected ? 'rgba(63,185,80,.25)' : 'var(--border)'}`,
+          borderRadius: 6, minWidth: 0,
         }}
         title={connected ? 'Scanner connected' : 'Open Mobile Scanner'}
       >
-        <span className="icon" style={{ fontSize: 20 }}>{connected ? 'qr_code_scanner' : 'qr_code'}</span>
+        <span className="icon" style={{ fontSize: 17 }}>{connected ? 'qr_code_scanner' : 'qr_code'}</span>
       </button>
 
       {open && (
         <div
           className="fixed inset-0 flex items-center justify-center p-4"
-          style={{ background: 'rgba(32,33,36,.6)', backdropFilter: 'blur(4px)', zIndex: 9999 }}
+          style={{ background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(6px)', zIndex: 9999 }}
           onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}
         >
-          <div className="md-card p-8 w-full max-w-sm flex flex-col items-center gap-5" style={{ borderRadius: 20 }}>
+          <div className="md-card p-8 w-full max-w-sm flex flex-col items-center gap-5" style={{ borderRadius: 14 }}>
             <div className="w-full flex items-center justify-between">
               <div>
-                <h2 style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 700, fontSize: 18, color: 'var(--text-1)' }}>Mobile Scanner</h2>
-                <p style={{ fontSize: 13, color: 'var(--text-2)' }}>Scan to open on your phone</p>
+                <h2 style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-1)' }}>Mobile Scanner</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>Scan to open on your phone</p>
               </div>
-              <button onClick={() => setOpen(false)} className="md-btn" style={{ padding: 8, borderRadius: 50, background: 'var(--surface-2)', color: 'var(--text-2)', minWidth: 0 }}>
+              <button onClick={() => setOpen(false)} className="md-btn" style={{ padding: 7, borderRadius: 8, background: 'var(--surface-2)', color: 'var(--text-2)', minWidth: 0 }}>
                 <span className="icon">close</span>
               </button>
             </div>
-
-            <div className="relative rounded-xl overflow-hidden bg-white p-2 shadow-sm" style={{ width: 220, height: 220 }}>
-              {!loaded && <div className="absolute inset-0 flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>Generating…</div>}
+            <div style={{ borderRadius: 10, overflow: 'hidden', background: '#fff', padding: 8, width: 216, height: 216, position: 'relative' }}>
+              {!loaded && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#666' }}>Generating…</div>}
               <img
                 src={`/api/scanner-qr?t=${Date.now()}`}
                 alt="Scanner QR"
-                className="w-full h-full object-contain"
-                style={{ opacity: loaded ? 1 : 0, transition: 'opacity .3s' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: loaded ? 1 : 0, transition: 'opacity .3s' }}
                 onLoad={() => setLoaded(true)}
               />
             </div>
-
             {url && (
               <a href={url} target="_blank" rel="noreferrer"
-                className="text-center break-all text-xs px-3 py-2 rounded-lg w-full"
-                style={{ color: 'var(--primary)', background: 'var(--primary-bg)', fontFamily: 'monospace' }}>
+                style={{ color: 'var(--primary)', background: 'var(--primary-bg)', fontFamily: 'monospace', fontSize: 11, padding: '6px 12px', borderRadius: 6, wordBreak: 'break-all', width: '100%', textAlign: 'center', textDecoration: 'none' }}>
                 {url}
               </a>
             )}
@@ -143,14 +125,13 @@ function NavLink({ to, icon, label }: { to: string; icon: string; label: string 
   return (
     <Link to={to} title={label} style={{
       display: 'flex', alignItems: 'center', gap: 5,
-      padding: '6px 11px', borderRadius: 8, fontSize: 13, fontWeight: active ? 600 : 400,
-      fontFamily: "'Google Sans', sans-serif",
+      padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: active ? 600 : 400,
       color: active ? 'var(--primary)' : 'var(--text-2)',
       background: active ? 'var(--primary-bg)' : 'transparent',
-      textDecoration: 'none', transition: 'background .15s, color .15s',
-      whiteSpace: 'nowrap',
+      textDecoration: 'none', transition: 'background .12s, color .12s',
+      whiteSpace: 'nowrap', border: active ? '1px solid rgba(88,166,255,.2)' : '1px solid transparent',
     }}>
-      <span className="icon" style={{ fontSize: 18 }}>{icon}</span>
+      <span className="icon" style={{ fontSize: 15 }}>{icon}</span>
       {label}
     </Link>
   );
@@ -170,7 +151,6 @@ function SyncButton() {
 
   useEffect(() => { fetchStatus(); const iv = setInterval(fetchStatus, 5000); return () => clearInterval(iv); }, [fetchStatus]);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -181,25 +161,25 @@ function SyncButton() {
   async function push() {
     setSyncing(true); setOpen(false); setStatus('Pushing…');
     try { await fetch('/api/sync/push', { method: 'POST' }); setStatus('Pushed ✓'); fetchStatus(); }
-    catch { setStatus('Push failed'); }
+    catch { setStatus('Failed'); }
     setSyncing(false); setTimeout(() => setStatus(''), 3000);
   }
 
   async function pull() {
-    setSyncing(true); setOpen(false); setStatus('Syncing from Excel…');
+    setSyncing(true); setOpen(false); setStatus('Syncing…');
     try { await fetch('/api/sync/pull', { method: 'POST' }); setStatus('Synced ✓'); fetchStatus(); }
-    catch { setStatus('Pull failed'); }
+    catch { setStatus('Failed'); }
     setSyncing(false); setTimeout(() => setStatus(''), 3000);
   }
 
   async function pullLogs() {
-    setSyncing(true); setOpen(false); setStatus('Importing logs…');
+    setSyncing(true); setOpen(false); setStatus('Importing…');
     try {
       const r = await fetch('/api/sync/pull-logs', { method: 'POST' });
       const d = await r.json();
-      setStatus(d.success ? `Logs: +${d.imported}` : 'Log pull failed');
+      setStatus(d.success ? `+${d.imported} logs` : 'Failed');
       fetchStatus();
-    } catch { setStatus('Log pull failed'); }
+    } catch { setStatus('Failed'); }
     setSyncing(false); setTimeout(() => setStatus(''), 4000);
   }
 
@@ -212,60 +192,37 @@ function SyncButton() {
         disabled={syncing}
         className="md-btn"
         style={{
-          padding: '7px 14px', fontSize: 13, gap: 6, borderRadius: 8,
-          background: syncing ? 'var(--surface-2)' : hasPending ? 'var(--warn-bg)' : 'var(--surface-2)',
-          color: syncing ? 'var(--text-2)' : hasPending ? '#b06000' : 'var(--success)',
-          border: `1px solid ${hasPending ? '#f9ab00' : syncing ? 'var(--border)' : 'transparent'}`,
+          padding: '5px 10px', fontSize: 12, gap: 5, borderRadius: 6,
+          background: syncing ? 'var(--surface-2)' : hasPending ? 'rgba(210,153,34,.12)' : 'var(--surface-2)',
+          color: syncing ? 'var(--text-2)' : hasPending ? 'var(--warn)' : 'var(--success)',
+          border: `1px solid ${hasPending ? 'rgba(210,153,34,.3)' : 'var(--border)'}`,
         }}
         title="Sync options"
       >
-        <span className="icon icon-sm" style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
+        <span className="icon" style={{ fontSize: 15, animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
           {syncing ? 'sync' : hasPending ? 'cloud_upload' : 'cloud_done'}
         </span>
-        {status || (syncing ? 'Working…' : hasPending ? `Push (${pendingCount})` : 'Synced')}
-        <span className="icon icon-sm" style={{ fontSize: 16, marginLeft: -2 }}>expand_more</span>
+        <span style={{ fontSize: 11 }}>
+          {status || (syncing ? 'Working…' : hasPending ? `${pendingCount} pending` : 'Synced')}
+        </span>
+        <span className="icon" style={{ fontSize: 13, color: 'var(--text-3)' }}>expand_more</span>
       </button>
 
       {open && (
         <div className="md-card" style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 200,
-          zIndex: 999, padding: 6, display: 'flex', flexDirection: 'column', gap: 2,
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 196,
+          zIndex: 999, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
         }}>
-          <button
-            onClick={push}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-              background: 'none', border: 'none', borderRadius: 6, cursor: 'pointer',
-              color: hasPending ? '#b06000' : 'var(--text-2)', textAlign: 'left', width: '100%',
-              fontWeight: hasPending ? 600 : 400, fontSize: 13,
-            }}
-          >
+          <button onClick={push} style={menuItemStyle(hasPending)}>
             <span className="icon icon-sm">cloud_upload</span>
-            <span>
-              Push to Excel
-              {hasPending && <span style={{ marginLeft: 6, fontSize: 11, background: '#f9ab00', color: '#000', padding: '1px 6px', borderRadius: 10 }}>{pendingCount}</span>}
-            </span>
+            <span>Push to Excel {hasPending && <span style={{ marginLeft: 5, fontSize: 10, background: 'var(--warn)', color: '#000', padding: '1px 5px', borderRadius: 8, fontWeight: 600 }}>{pendingCount}</span>}</span>
           </button>
-          <button
-            onClick={pull}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-              background: 'none', border: 'none', borderRadius: 6, cursor: 'pointer',
-              color: 'var(--text-1)', textAlign: 'left', width: '100%', fontSize: 13,
-            }}
-          >
+          <button onClick={pull} style={menuItemStyle(false)}>
             <span className="icon icon-sm">cloud_download</span>
             Pull from Excel
           </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '2px 6px' }} />
-          <button
-            onClick={pullLogs}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-              background: 'none', border: 'none', borderRadius: 6, cursor: 'pointer',
-              color: 'var(--text-2)', textAlign: 'left', width: '100%', fontSize: 13,
-            }}
-          >
+          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
+          <button onClick={pullLogs} style={menuItemStyle(false)}>
             <span className="icon icon-sm">history</span>
             Pull Activity Logs
           </button>
@@ -275,6 +232,64 @@ function SyncButton() {
   );
 }
 
+function menuItemStyle(highlight: boolean): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px',
+    background: 'none', border: 'none', borderRadius: 5, cursor: 'pointer',
+    color: highlight ? 'var(--warn)' : 'var(--text-1)',
+    textAlign: 'left', width: '100%', fontWeight: highlight ? 600 : 400, fontSize: 12,
+  };
+}
+
+// ── App Menu (gear / settings) ────────────────────────────────────────────────
+function AppMenu() {
+  const [open, setOpen] = useState(false);
+  const [version, setVersion] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    ipc.getAppVersion?.().then((v: string) => setVersion(v)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="md-btn"
+        title="Settings & more"
+        style={{ padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid transparent', color: 'var(--text-2)', minWidth: 0 }}
+      >
+        <span className="icon" style={{ fontSize: 17 }}>settings</span>
+      </button>
+
+      {open && (
+        <div className="md-card animate-in" style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 210,
+          zIndex: 999, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
+        }}>
+          <button onClick={() => { setOpen(false); ipc.openSettings?.(); }} style={menuItemStyle(false)}>
+            <span className="icon icon-sm">tune</span> Connections & Setup
+          </button>
+          <button onClick={() => { setOpen(false); ipc.checkForUpdates?.(); }} style={menuItemStyle(false)}>
+            <span className="icon icon-sm">system_update</span> Check for Updates
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
+          <button onClick={() => { setOpen(false); ipc.showAbout?.(); }} style={{ ...menuItemStyle(false), color: 'var(--text-2)' }}>
+            <span className="icon icon-sm">info</span>
+            <span>About {version && <span style={{ color: 'var(--text-3)', fontSize: 11 }}>v{version}</span>}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -308,9 +323,9 @@ export default function App() {
           }).then(() => fetch('/api/asset/assign', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Swapped via scanner' })
-          })).then(() => { triggerToast(`Swapped assets`); nav(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
+          })).then(() => { triggerToast('Swapped assets'); nav(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
         }
-      } catch (e) { console.error("Context action failed", e); }
+      } catch (e) { console.error('Context action failed', e); }
       return;
     }
 
@@ -331,39 +346,47 @@ export default function App() {
 
         {/* Toast */}
         {toastMsg && (
-          <div key={toastMsg.id} style={{
-            position: 'fixed', top: 72, left: '50%', transform: 'translateX(-50%)',
-            background: 'var(--text-1)', color: '#fff',
-            padding: '10px 20px', borderRadius: 24, fontSize: 13, fontWeight: 500,
-            boxShadow: 'var(--shadow-3)', zIndex: 9998,
-            display: 'flex', alignItems: 'center', gap: 8,
+          <div key={toastMsg.id} className="animate-in" style={{
+            position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
+            background: 'var(--surface-3)', color: 'var(--text-1)',
+            padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            boxShadow: 'var(--shadow-3)', zIndex: 9998, border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', gap: 7,
           }}>
-            <span className="icon icon-sm">check_circle</span>
+            <span className="icon icon-sm" style={{ color: 'var(--success)' }}>check_circle</span>
             {toastMsg.msg}
           </div>
         )}
 
-        {/* ── Top App Bar ── */}
-        <header style={{
-          background: 'var(--surface)',
-          borderBottom: '1px solid var(--border)',
-          boxShadow: 'var(--shadow-1)',
-          position: 'sticky', top: 0, zIndex: 100,
-        }}>
+        {/* ── Top Header / Title Bar ── */}
+        <header
+          className="titlebar-drag"
+          style={{
+            background: 'var(--surface)',
+            borderBottom: '1px solid var(--border)',
+            position: 'sticky', top: 0, zIndex: 100,
+          }}
+        >
           <div style={{
-            maxWidth: 1280, margin: '0 auto', padding: '0 24px',
-            height: 64, display: 'flex', alignItems: 'center', gap: 24,
+            paddingLeft: 16,
+            paddingRight: 152,   /* clear native win controls (~138px + gap) */
+            height: 48,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
           }}>
             {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span className="icon" style={{ color: 'var(--primary)', fontSize: 28 }}>inventory_2</span>
-              <span style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--text-1)', letterSpacing: -.3 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+              <span className="icon" style={{ color: 'var(--primary)', fontSize: 20 }}>inventory_2</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-1)', letterSpacing: -.2 }}>
                 AssetGravity
               </span>
             </div>
 
-            {/* Nav — centre */}
-            <nav style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, justifyContent: 'center' }}>
+            <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0 }} />
+
+            {/* Nav */}
+            <nav style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
               <NavLink to="/dashboard" icon="dashboard"   label="Dashboard" />
               <NavLink to="/"          icon="grid_view"   label="Browse"    />
               <NavLink to="/new-asset" icon="add_box"     label="Create"    />
@@ -372,21 +395,18 @@ export default function App() {
               <NavLink to="/activity"  icon="history"     label="Activity"  />
             </nav>
 
-            {/* Search */}
-            <QuickLookup />
-
-            <div style={{ width: 1, height: 24, background: 'var(--border)', flexShrink: 0 }} />
-
             {/* Right actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <QuickLookup />
               <ScannerQRButton connected={connected} />
               <SyncButton />
+              <AppMenu />
             </div>
           </div>
         </header>
 
         {/* ── Page Content ── */}
-        <main style={{ flex: 1, maxWidth: 1280, width: '100%', margin: '0 auto', padding: '28px 24px' }}>
+        <main style={{ flex: 1, maxWidth: 1280, width: '100%', margin: '0 auto', padding: '24px 20px' }}>
           <Routes>
             <Route path="/" element={<BrowsePage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
