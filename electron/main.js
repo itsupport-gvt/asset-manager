@@ -165,6 +165,10 @@ function spawnBackend(port) {
     PYTHONUNBUFFERED: '1',
   };
 
+  // If syncFrontend() copied files, tell backend to serve from there
+  const syncedStatic = path.join(APP_DATA_DIR, 'static');
+  if (fs.existsSync(syncedStatic)) env.FRONTEND_STATIC_DIR = syncedStatic;
+
   backendProc = spawn(BACKEND_EXE, [], {
     cwd: BACKEND_DIR,
     env,
@@ -193,6 +197,34 @@ function killBackend() {
 // ── App menu (hidden — actions exposed via IPC instead) ───────────────────────
 function buildMenu() {
   Menu.setApplicationMenu(null);
+}
+
+// ── Sync frontend from ASAR to userData ───────────────────────────────────────
+// electron-updater always replaces the ASAR but may not replace the PyInstaller
+// backend bundle if asset-backend.exe is locked. Copying from ASAR on every
+// launch guarantees the frontend is always current, no matter which exe runs.
+function copyDirFromAsar(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const item of fs.readdirSync(src)) {
+    const s = path.join(src, item);
+    const d = path.join(dst, item);
+    try {
+      if (fs.statSync(s).isDirectory()) copyDirFromAsar(s, d);
+      else fs.writeFileSync(d, fs.readFileSync(s));
+    } catch { /* skip unreadable entries */ }
+  }
+}
+
+function syncFrontend() {
+  if (!app.isPackaged) return;
+  const src = path.join(app.getAppPath(), 'frontend-dist');
+  const dst = path.join(APP_DATA_DIR, 'static');
+  if (!fs.existsSync(src)) { console.log('[Electron] No frontend-dist in ASAR'); return; }
+  try {
+    if (fs.existsSync(dst)) fs.rmSync(dst, { recursive: true, force: true });
+    copyDirFromAsar(src, dst);
+    console.log('[Electron] Frontend synced from ASAR →', dst);
+  } catch (e) { console.warn('[Electron] Frontend sync failed:', e.message); }
 }
 
 // ── IPC handlers ─────────────────────────────────────────────────────────────
@@ -236,6 +268,16 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+ipcMain.handle('set-theme', (_, theme) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitleBarOverlay({
+      color:       theme === 'light' ? '#ffffff' : '#161b22',
+      symbolColor: theme === 'light' ? '#57606a' : '#8b949e',
+      height: 48,
+    });
+  }
+});
+
 ipcMain.handle('show-about', () => {
   dialog.showMessageBox({
     type: 'info',
@@ -247,8 +289,8 @@ ipcMain.handle('show-about', () => {
 
 // ── Main launch sequence ──────────────────────────────────────────────────────
 async function launchApp() {
-  // Kill any orphaned backend from a previous partial update before spawning a new one
   try { execSync('taskkill /IM asset-backend.exe /T /F', { stdio: 'ignore' }); } catch {}
+  syncFrontend();
 
   createSplash();
 

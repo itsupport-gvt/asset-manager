@@ -109,7 +109,18 @@ jobs:
             --noconfirm
           Write-Host "PyInstaller complete."
 
-      # ── 8. Electron — install npm deps ───────────────────────────────────────
+      # ── 8a. Copy frontend into Electron ASAR bundle ─────────────────────────
+      # This is the key fix for half-update issues: Electron copies these files
+      # from the ASAR to userData on every launch, so the frontend is always
+      # current even if the PyInstaller backend exe could not be replaced.
+      - name: Copy frontend dist into electron/frontend-dist
+        shell: pwsh
+        run: |
+          if (Test-Path electron\frontend-dist) { Remove-Item electron\frontend-dist -Recurse -Force }
+          Copy-Item backend\static electron\frontend-dist -Recurse -Force
+          Write-Host "Copied frontend dist to electron/frontend-dist/ ($((Get-ChildItem electron\frontend-dist -Recurse -File).Count) files)"
+
+      # ── 8b. Electron — install npm deps ──────────────────────────────────────
       - name: Install Electron npm dependencies
         working-directory: electron
         run: npm install --no-fund --no-audit

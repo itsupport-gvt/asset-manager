@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(python3:*)",
+      "Bash(gh run list:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git -C \"..\" add .github/workflows/release.yml)",
+      "Bash(git -C \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\" status --short)",
+      "Bash(ls \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\.github\\\\workflows\"\" && git -C \"c:UsersdevmuOneDriveDesktopAsset report generator \" status --short)"
+    ]
+  }
+}

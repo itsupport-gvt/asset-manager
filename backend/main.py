@@ -249,20 +249,19 @@ async def health():
 # ── Serve React frontend (production build) ───────────────────────────────────
 # Only active after running `npm run build` in the frontend folder.
 
-STATIC_DIR = _BASE / "static"
+# Electron copies the frontend from the ASAR to userData/static/ on every
+# launch so that auto-updates always serve the latest frontend regardless of
+# whether the PyInstaller bundle was overwritten.
+_ext_static = os.getenv("FRONTEND_STATIC_DIR", "")
+STATIC_DIR = Path(_ext_static) if (_ext_static and Path(_ext_static).exists()) else _BASE / "static"
 
 if STATIC_DIR.exists():
     assets_subdir = STATIC_DIR / "assets"
-    # Only mount /assets if the subdirectory exists (created by npm run build)
     if assets_subdir.exists():
         app.mount("/assets", StaticFiles(directory=assets_subdir), name="assets")
 
     @app.get("/{full_path:path}", response_class=FileResponse)
     async def serve_spa(full_path: str):
-        """
-        SPA catch-all: serve the exact file if it exists,
-        otherwise return index.html for client-side routing.
-        """
         requested = STATIC_DIR / full_path
         if requested.is_file():
             return FileResponse(requested)

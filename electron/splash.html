@@ -17,41 +17,38 @@
       user-select: none;
       -webkit-app-region: drag;
     }
-    .icon-wrap {
-      width: 56px; height: 56px;
+    .logo-wrap {
+      width: 72px; height: 72px;
       background: #0d2044;
-      border: 1px solid rgba(88,166,255,.25);
-      border-radius: 14px;
+      border: 1px solid rgba(88,166,255,.2);
+      border-radius: 18px;
       display: flex; align-items: center; justify-content: center;
-      margin-bottom: 18px;
+      margin-bottom: 20px;
       animation: pulse 2.4s ease-in-out infinite;
+      padding: 10px;
     }
-    .icon-wrap span {
-      font-family: 'Material Icons Round';
-      font-size: 30px;
-      color: #58a6ff;
-      font-style: normal;
-    }
+    .logo-wrap svg { width: 100%; height: 100%; }
     h1 {
-      font-size: 20px;
+      font-size: 19px;
       font-weight: 700;
       letter-spacing: -.3px;
       color: #e6edf3;
       margin-bottom: 4px;
     }
     .sub {
-      font-size: 12px;
+      font-size: 11px;
       color: #484f58;
       margin-bottom: 40px;
-      letter-spacing: .4px;
+      letter-spacing: .6px;
+      text-transform: uppercase;
     }
     .spinner {
-      width: 28px; height: 28px;
-      border: 2.5px solid rgba(255,255,255,.08);
+      width: 26px; height: 26px;
+      border: 2.5px solid rgba(255,255,255,.07);
       border-top-color: #58a6ff;
       border-radius: 50%;
       animation: spin 0.75s linear infinite;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
     .status {
       font-size: 11px;
@@ -60,15 +57,23 @@
       letter-spacing: .2px;
     }
     @keyframes spin  { to { transform: rotate(360deg); } }
-    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(88,166,255,.0); } 50% { box-shadow: 0 0 0 8px rgba(88,166,255,.08); } }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); } 50% { box-shadow: 0 0 0 10px rgba(88,166,255,.07); } }
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
 </head>
 <body>
-  <div class="icon-wrap"><span>inventory_2</span></div>
+  <div class="logo-wrap">
+    <svg width="321" height="321" viewBox="0 0 321 321" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M241.008 160.559L206.195 124.144C206.195 124.144 204.453 123.645 204.453 119.406V79.7475C204.453 79.7475 205.45 70.769 213.654 74.5079L286.022 146.093C286.022 146.093 296.713 160.06 289.501 170.787C282.29 181.511 214.899 247.607 214.899 247.607C214.899 247.607 204.949 252.099 204.453 242.619C203.957 233.141 204.453 202.713 204.453 202.713C204.453 202.713 204.703 199.719 207.189 196.727C209.677 193.732 241.008 160.559 241.008 160.559Z" fill="#1475BC"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M59.523 180.998H36.1108C31.6304 180.998 28 177.357 28 172.864V149.383C28 144.889 31.6304 141.248 36.1108 141.248H59.523C64.0018 141.248 67.6322 144.889 67.6322 149.383V172.864C67.6322 177.357 64.0018 180.999 59.523 180.998Z" fill="#03B0AD"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M109.601 127.124H86.1888C81.7085 127.124 78.0781 123.484 78.0781 118.99V95.5079C78.0781 91.0141 81.7085 87.3742 86.1888 87.3742H109.601C114.08 87.3742 117.712 91.0151 117.712 95.5089V118.99C117.712 123.484 114.08 127.124 109.601 127.124Z" fill="#03B0AD"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M163.178 72.2627H139.765C135.285 72.2627 131.654 68.6218 131.654 64.1297V40.6465C131.654 36.1533 135.285 32.5115 139.765 32.5115H163.178C167.656 32.5115 171.288 36.1543 171.288 40.6465V64.1297C171.288 68.6218 167.656 72.2637 163.178 72.2627Z" fill="#26AAE1"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M109.601 234.873H86.1888C81.7085 234.873 78.0781 231.234 78.0781 226.739V203.257C78.0781 198.764 81.7085 195.122 86.1888 195.122H109.601C114.08 195.122 117.712 198.764 117.712 203.257V226.738C117.712 231.233 114.08 234.874 109.601 234.873Z" fill="#03B0AD"/>
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M163.178 289.996H139.765C135.285 289.996 131.654 286.354 131.654 281.862V258.38C131.654 253.885 135.285 250.247 139.765 250.247H163.178C167.656 250.247 171.288 253.886 171.288 258.381V281.862C171.288 286.354 167.656 289.996 163.178 289.996Z" fill="#26AAE1"/>
+      <path d="M118 190V181.75H160V190H118ZM130.6 177.625C128.29 177.625 126.312 176.817 124.667 175.202C123.022 173.586 122.2 171.644 122.2 169.375V132.25C122.2 129.981 123.022 128.039 124.667 126.423C126.312 124.808 128.29 124 130.6 124H189.4C191.71 124 193.687 124.808 195.332 126.423C196.977 128.039 197.8 129.981 197.8 132.25H130.6V169.375H160V177.625H130.6ZM193.6 181.75V148.75H176.8V181.75H193.6ZM174.7 190C172.95 190 171.462 189.398 170.237 188.195C169.012 186.992 168.4 185.531 168.4 183.812V146.687C168.4 144.969 169.012 143.508 170.237 142.305C171.462 141.102 172.95 140.5 174.7 140.5H195.7C197.45 140.5 198.937 141.102 200.162 142.305C201.387 143.508 202 144.969 202 146.687V183.812C202 185.531 201.387 186.992 200.162 188.195C198.937 189.398 197.45 190 195.7 190H174.7ZM185.2 159.062C186.11 159.062 186.862 158.753 187.457 158.134C188.052 157.516 188.35 156.794 188.35 155.969C188.35 155.075 188.052 154.336 187.457 153.752C186.862 153.167 186.11 152.875 185.2 152.875C184.36 152.875 183.625 153.167 182.995 153.752C182.365 154.336 182.05 155.075 182.05 155.969C182.05 156.794 182.365 157.516 182.995 158.134C183.625 158.753 184.36 159.062 185.2 159.062Z" fill="#03B0AD"/>
+    </svg>
+  </div>
   <h1>Asset Manager</h1>
-  <p class="sub">GRAVITY BP</p>
+  <p class="sub">Gravity BP</p>
   <div class="spinner"></div>
   <p class="status" id="status">Starting…</p>
 </body>

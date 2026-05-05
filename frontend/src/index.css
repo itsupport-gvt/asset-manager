@@ -2,7 +2,7 @@
 @import url('https://fonts.googleapis.com/icon?family=Material+Icons+Round');
 @import "tailwindcss";
 
-/* ── Design Tokens — Dark Theme ─────────────────────────────────────── */
+/* ── Dark Theme (default) ───────────────────────────────────────────── */
 :root {
   --bg:          #0d1117;
   --surface:     #161b22;
@@ -15,24 +15,53 @@
   --primary-bg:  #0d2044;
   --on-primary:  #ffffff;
   --text-1:      #e6edf3;
-  --text-2:      #8b949e;
-  --text-3:      #484f58;
+  --text-2:      #8b949e;   /* AA-passing on #0d1117 */
+  --text-3:      #6e7681;   /* improved from #484f58 */
   --success:     #3fb950;
   --success-bg:  #0b2a16;
   --warn:        #d29922;
   --warn-bg:     #2b1d0e;
   --danger:      #f85149;
   --danger-bg:   #2d0f0d;
-  --shadow-1:    0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
+  --shadow-1:    0 1px 3px rgba(0,0,0,.5),  0 1px 2px rgba(0,0,0,.4);
   --shadow-2:    0 3px 10px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.4);
-  --shadow-3:    0 6px 20px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+  --shadow-3:    0 6px 20px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.4);
   --radius-sm:   6px;
   --radius:      10px;
   --radius-lg:   14px;
 }
 
+/* ── Light Theme ────────────────────────────────────────────────────── */
+html[data-theme="light"] {
+  --bg:          #f6f8fa;
+  --surface:     #ffffff;
+  --surface-2:   #f6f8fa;
+  --surface-3:   #eaeef2;
+  --border:      #d0d7de;
+  --border-2:    #eaeef2;
+  --primary:     #0969da;
+  --primary-dk:  #0550ae;
+  --primary-bg:  #ddf4ff;
+  --on-primary:  #ffffff;
+  --text-1:      #1f2328;
+  --text-2:      #57606a;
+  --text-3:      #818b98;
+  --success:     #1a7f37;
+  --success-bg:  #dafbe1;
+  --warn:        #9a6700;
+  --warn-bg:     #fff8c5;
+  --danger:      #d1242f;
+  --danger-bg:   #ffebe9;
+  --shadow-1:    0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+  --shadow-2:    0 3px 10px rgba(0,0,0,.12),0 1px 4px rgba(0,0,0,.08);
+  --shadow-3:    0 6px 20px rgba(0,0,0,.12),0 2px 8px rgba(0,0,0,.08);
+}
+
 /* ── Base ───────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }
 
 body {
   background: var(--bg);
@@ -44,20 +73,15 @@ body {
 }
 
 /* ── Draggable title bar ────────────────────────────────────────────── */
-.titlebar-drag {
-  -webkit-app-region: drag;
-}
+.titlebar-drag { -webkit-app-region: drag; }
 .titlebar-drag button,
 .titlebar-drag a,
 .titlebar-drag input,
 .titlebar-drag select,
-.titlebar-drag [role="button"] {
-  -webkit-app-region: no-drag;
-}
+.titlebar-drag [role="button"] { -webkit-app-region: no-drag; }
 
 /* ── Utility Classes ────────────────────────────────────────────────── */
 @layer utilities {
-  /* Cards */
   .md-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -65,16 +89,13 @@ body {
     box-shadow: var(--shadow-1);
     transition: box-shadow .2s ease;
   }
-  .md-card:hover {
-    box-shadow: var(--shadow-2);
-  }
+  .md-card:hover { box-shadow: var(--shadow-2); }
   .md-card-flat {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
 
-  /* Buttons */
   .md-btn {
     display: inline-flex;
     align-items: center;
@@ -91,10 +112,7 @@ body {
     color: var(--text-1);
     outline: none;
   }
-  .md-btn:hover {
-    background: var(--surface-3);
-    border-color: var(--border);
-  }
+  .md-btn:hover { background: var(--surface-3); }
   .md-btn-primary {
     background: var(--primary);
     color: var(--on-primary);
@@ -111,19 +129,9 @@ body {
     color: var(--primary);
     border: 1px solid var(--border);
   }
-  .md-btn-outlined:hover {
-    background: var(--primary-bg);
-  }
-  .md-btn-tonal {
-    background: var(--primary-bg);
-    color: var(--primary);
-    border-color: transparent;
-  }
-  .md-btn-tonal:hover {
-    background: #0d2a56;
-  }
+  .md-btn-outlined:hover { background: var(--primary-bg); }
+  .md-btn-tonal { background: var(--primary-bg); color: var(--primary); border-color: transparent; }
 
-  /* Chip */
   .md-chip {
     display: inline-flex;
     align-items: center;
@@ -137,7 +145,6 @@ body {
     color: var(--text-2);
   }
 
-  /* Input */
   .md-input {
     width: 100%;
     padding: 8px 12px;
@@ -151,14 +158,12 @@ body {
   }
   .md-input:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(88,166,255,.15);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
     background: var(--surface);
   }
   .md-input::placeholder { color: var(--text-3); }
 
-  /* Section header */
   .md-section-label {
-    font-family: 'Inter', system-ui, sans-serif;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: .8px;
@@ -167,28 +172,14 @@ body {
     margin-bottom: 10px;
   }
 
-  /* Status badges */
-  .badge-active   { background: var(--success-bg); color: var(--success); }
-  .badge-warn     { background: var(--warn-bg);    color: var(--warn); }
-  .badge-neutral  { background: var(--surface-2);  color: var(--text-2); }
-  .badge-danger   { background: var(--danger-bg);  color: var(--danger); }
+  .badge-active  { background: var(--success-bg); color: var(--success); }
+  .badge-warn    { background: var(--warn-bg);    color: var(--warn); }
+  .badge-neutral { background: var(--surface-2);  color: var(--text-2); }
+  .badge-danger  { background: var(--danger-bg);  color: var(--danger); }
 
-  /* Material icon helper */
   .icon    { font-family: 'Material Icons Round'; font-style: normal; font-size: 18px; line-height: 1; display: inline-block; }
   .icon-sm { font-size: 15px; }
   .icon-lg { font-size: 22px; }
-}
-
-/* ── Scrollbar ──────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--surface-3); }
-
-/* ── Autofill fix ───────────────────────────────────────────────────── */
-input:-webkit-autofill, input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 30px var(--surface-2) inset !important;
-  -webkit-text-fill-color: var(--text-1) !important;
 }
 
 /* ── Select ─────────────────────────────────────────────────────────── */
@@ -201,20 +192,25 @@ select {
   font-size: 13px;
   outline: none;
   cursor: pointer;
-  appearance: auto;
-  color-scheme: dark;
 }
 select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(88,166,255,.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
 }
-option {
-  background: var(--surface-2);
-  color: var(--text-1);
+
+/* ── Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--surface-3); }
+
+/* ── Autofill ───────────────────────────────────────────────────────── */
+input:-webkit-autofill, input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--surface-2) inset !important;
+  -webkit-text-fill-color: var(--text-1) !important;
 }
 
 /* ── Animations ─────────────────────────────────────────────────────── */
 @keyframes spin    { to { transform: rotate(360deg); } }
 @keyframes fadeIn  { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes slideIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
 .animate-in { animation: fadeIn .2s ease forwards; }

@@ -241,8 +241,8 @@ function menuItemStyle(highlight: boolean): React.CSSProperties {
   };
 }
 
-// ── App Menu (gear / settings) ────────────────────────────────────────────────
-function AppMenu() {
+// ── App Menu (gear / settings / theme) ───────────────────────────────────────
+function AppMenu({ theme, onToggleTheme }: { theme: 'dark' | 'light'; onToggleTheme: () => void }) {
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState('');
   const ref = useRef<HTMLDivElement>(null);
@@ -271,9 +271,15 @@ function AppMenu() {
 
       {open && (
         <div className="md-card animate-in" style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 210,
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 220,
           zIndex: 999, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
         }}>
+          {/* Theme toggle */}
+          <button onClick={() => { onToggleTheme(); setOpen(false); }} style={menuItemStyle(false)}>
+            <span className="icon icon-sm">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+            Switch to {theme === 'dark' ? 'Light' : 'Dark'} Theme
+          </button>
+          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
           <button onClick={() => { setOpen(false); ipc.openSettings?.(); }} style={menuItemStyle(false)}>
             <span className="icon icon-sm">tune</span> Connections & Setup
           </button>
@@ -297,6 +303,20 @@ export default function App() {
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<{ msg: string; id: number } | null>(null);
   const nav = useNavigate();
+
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    ipc.setTheme?.(theme).catch(() => {});
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  }
 
   function triggerToast(msg: string) {
     setToastMsg({ msg, id: Date.now() });
@@ -376,8 +396,8 @@ export default function App() {
             gap: 16,
           }}>
             {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
-              <span className="icon" style={{ color: 'var(--primary)', fontSize: 20 }}>inventory_2</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <img src="/assets/gravity_asset_v1.svg" alt="Logo" style={{ width: 26, height: 26, flexShrink: 0 }} />
               <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-1)', letterSpacing: -.2 }}>
                 AssetGravity
               </span>
@@ -400,7 +420,7 @@ export default function App() {
               <QuickLookup />
               <ScannerQRButton connected={connected} />
               <SyncButton />
-              <AppMenu />
+              <AppMenu theme={theme} onToggleTheme={toggleTheme} />
             </div>
           </div>
         </header>

@@ -380,7 +380,7 @@ export function ActivityLogPage() {
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
 
                     {/* Timestamp */}
-                    <td style={{ padding: '9px 14px', color: 'var(--text-3)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                    <td style={{ padding: '9px 14px', color: 'var(--text-2)', whiteSpace: 'nowrap', fontSize: 12 }}>
                       {fmtTime(item.timestamp)}
                     </td>
 

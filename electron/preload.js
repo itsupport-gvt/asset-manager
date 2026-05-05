@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('assetManager', {
   openSettings:    () => ipcRenderer.invoke('open-settings'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   showAbout:       () => ipcRenderer.invoke('show-about'),
+  setTheme:        (t) => ipcRenderer.invoke('set-theme', t),
 });

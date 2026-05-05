@@ -25,7 +25,15 @@
       "Bash(ARCHIVE=\"/tmp/winCodeSign-2.6.0.7z\")",
       "Bash(__NEW_LINE_eb7e8173c029d184__ echo \"Downloading...\")",
       "Bash(curl:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(git -C \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\" rev-parse --show-toplevel)",
+      "Bash(git -C \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\" status --short)",
+      "Bash(git -C:*)",
+      "Bash(git -C \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\" remote get-url origin)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(powershell -ExecutionPolicy Bypass -File:*)",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\electron\\\\assets\")",
+      "PowerShell(Copy-Item \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\backend\\\\static\\\\assets\\\\gravity_asset_v1.svg\" \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\electron\\\\assets\\\\gravity_logo.svg\" -Force)"
     ],
     "additionalDirectories": [
       "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\frontend\\src\\pages",
