@@ -47,6 +47,11 @@ def run_migrations():
         ("assets",           "charger_model",    "TEXT"),
         ("assets",           "charger_serial",   "TEXT"),
         ("assets",           "charger_notes",    "TEXT"),
+        # v1.3.6 — new tech spec fields
+        ("assets",           "processor",        "TEXT"),
+        ("assets",           "graphics",         "TEXT"),
+        ("assets",           "screen_size",      "TEXT"),
+        ("assets",           "os",               "TEXT"),
         # v1.2.0 — extended audit fields on assignment_logs
         ("assignment_logs",  "old_status",       "TEXT"),
         ("assignment_logs",  "new_status",        "TEXT"),
