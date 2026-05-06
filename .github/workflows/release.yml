@@ -80,8 +80,11 @@ jobs:
           $jsFile = Get-ChildItem "..\backend\static\assets\*.js" | Select-Object -First 1
           if (!$jsFile) { Write-Error "No JS bundle found!"; exit 1 }
           $content = Get-Content $jsFile.FullName -Raw
-          if ($content -notmatch "SwapPage|swapAsset|pullLogs") {
-            Write-Error "JS bundle does not contain new features (SwapPage/pullLogs missing)!"; exit 1
+          if ($content -notmatch "swapAsset|pullLogs|/swap/") {
+            Write-Error "JS bundle missing swap/log features!"; exit 1
+          }
+          if ($content -notmatch "processor|data-theme|light_mode|dark_mode") {
+            Write-Error "JS bundle missing v1.3.7 features (processor/theme toggle)!"; exit 1
           }
           Write-Host "Frontend build verified. Bundle: $($jsFile.Name) ($([Math]::Round($jsFile.Length/1KB))KB)"
 

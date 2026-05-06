@@ -420,6 +420,15 @@ export default function App() {
               <QuickLookup />
               <ScannerQRButton connected={connected} />
               <SyncButton />
+              {/* Theme toggle — always visible */}
+              <button
+                onClick={toggleTheme}
+                className="md-btn"
+                title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+                style={{ padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid transparent', color: 'var(--text-2)', minWidth: 0 }}
+              >
+                <span className="icon" style={{ fontSize: 17 }}>{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
+              </button>
               <AppMenu theme={theme} onToggleTheme={toggleTheme} />
             </div>
           </div>

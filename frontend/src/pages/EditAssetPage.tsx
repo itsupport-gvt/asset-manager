@@ -23,8 +23,8 @@ const ASSET_TYPES = [
 ];
 const CONDITIONS = ['Excellent','Good','Fair','Poor','Damaged'];
 const STATUSES   = ['In Stock','Active','Unassigned','Missing','Retired'];
-const OS_OPTIONS = ['Windows 11', 'Windows 10', 'Windows 11 Pro', 'Windows 10 Pro', 'macOS', 'Ubuntu', 'Debian', 'Chrome OS', 'Other'];
-const SPEC_TYPES = new Set(['Laptop', 'Desktop', 'Server']);
+const OS_OPTIONS = ['Windows 11', 'Windows 10', 'Windows 11 Pro', 'Windows 10 Pro', 'macOS', 'Ubuntu', 'Debian', 'Chrome OS', 'Android', 'iOS', 'Other'];
+const SPEC_TYPES = new Set(['Laptop', 'Desktop', 'Server', 'Mobile Phone', 'Smart TV', 'Printer']);
 
 const selStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8,
