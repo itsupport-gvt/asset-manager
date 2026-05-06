@@ -36,6 +36,10 @@ class DBAsset(Base):
     notes = Column(String, nullable=True)
     storage = Column(String, nullable=True)
     memory_ram = Column(String, nullable=True)
+    processor = Column(String, nullable=True)
+    graphics = Column(String, nullable=True)
+    screen_size = Column(String, nullable=True)
+    os = Column(String, nullable=True)
     purchase_date = Column(String, nullable=True)
     purchase_price = Column(String, nullable=True)
     vendor = Column(String, nullable=True)
@@ -68,4 +72,4 @@ class DBAssignmentLog(Base):
     changed_fields = Column(String, nullable=True)   # JSON: [{"field","old","new"}, ...]
     asset_type     = Column(String, nullable=True)   # e.g. "Laptop"
     asset_label    = Column(String, nullable=True)   # e.g. "Dell XPS 15 LT-2312-0001"
-    source_log_id  = Column(String, nullable=True, index=True)  # Excel LogID — used for dedup on pull
+    source_log_id  = Column(String, nullable=True, index=True)  # Excel LogID ï¿½ used for dedup on pull

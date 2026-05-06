@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ScanField } from '../components/ScanField';
+import { SpecInput, RAM_UNITS, STORAGE_UNITS, SCREEN_UNITS } from '../components/SpecInput';
 import type { CreateAssetRequest } from '../lib/types';
 
 const PREFIX_TO_TYPE: Record<string, string> = {
@@ -22,6 +23,8 @@ const ASSET_TYPES = [
 ];
 const CONDITIONS = ['Excellent','Good','Fair','Poor','Damaged'];
 const STATUSES   = ['In Stock','Active','Unassigned','Missing','Retired'];
+const OS_OPTIONS = ['Windows 11', 'Windows 10', 'Windows 11 Pro', 'Windows 10 Pro', 'macOS', 'Ubuntu', 'Debian', 'Chrome OS', 'Other'];
+const SPEC_TYPES = new Set(['Laptop', 'Desktop', 'Server']);
 
 const selStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8,
@@ -53,6 +56,8 @@ export function EditAssetPage() {
       status: asset.status, condition: asset.condition,
       brand: asset.brand, model: asset.model, serial_number: asset.serial_number,
       storage: asset.storage, memory_ram: asset.memory_ram,
+      processor: asset.processor, graphics: asset.graphics,
+      screen_size: asset.screen_size, os: asset.os,
       purchase_date: asset.purchase_date, purchase_price: asset.purchase_price,
       vendor: asset.vendor, invoice_ref: asset.invoice_ref,
       warranty_end: asset.warranty_end, location: asset.location,
@@ -134,10 +139,29 @@ export function EditAssetPage() {
           <div style={{ gridColumn: '1 / -1' }}>
             <ScanField label="Serial Number" value={form.serial_number || ''} onChange={set('serial_number')} />
           </div>
-          <ScanField label="Storage" value={form.storage || ''} onChange={set('storage')} placeholder="e.g. 512GB SSD" />
-          <ScanField label="Memory (RAM)" value={form.memory_ram || ''} onChange={set('memory_ram')} placeholder="e.g. 16GB" />
+          <SpecInput label="Storage" value={form.storage || ''} onChange={set('storage')} units={STORAGE_UNITS} placeholder="512" />
+          <SpecInput label="Memory (RAM)" value={form.memory_ram || ''} onChange={set('memory_ram')} units={RAM_UNITS} placeholder="16" />
         </div>
       </div>
+
+      {/* Technical Specs — Laptop / Desktop / Server */}
+      {SPEC_TYPES.has(form.asset_type || '') && (
+        <div className="md-card" style={{ padding: 24, borderLeft: '3px solid var(--primary)' }}>
+          <SectionTitle icon="developer_board" title="Technical Specifications" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <ScanField label="Processor" value={form.processor || ''} onChange={set('processor')} placeholder="e.g. Intel Core i7-1355U" />
+            <ScanField label="Graphics" value={form.graphics || ''} onChange={set('graphics')} placeholder="e.g. NVIDIA RTX 3060" />
+            <SpecInput label="Screen Size" value={form.screen_size || ''} onChange={set('screen_size')} units={SCREEN_UNITS} placeholder="15.6" />
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Operating System</label>
+              <select value={form.os || ''} onChange={e => set('os')(e.target.value)} style={{ ...selStyle, width: '100%' }}>
+                <option value="">— Select OS —</option>
+                {OS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Purchase */}
       <div className="md-card" style={{ padding: 24 }}>

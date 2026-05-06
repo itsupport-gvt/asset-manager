@@ -14,6 +14,10 @@ export interface Asset {
     notes: string;
     storage: string;
     memory_ram: string;
+    processor: string;
+    graphics: string;
+    screen_size: string;
+    os: string;
     purchase_date: string;
     purchase_price: string;
     vendor: string;
@@ -65,6 +69,10 @@ export interface CreateAssetRequest {
     serial_number: string;
     storage?: string;
     memory_ram?: string;
+    processor?: string;
+    graphics?: string;
+    screen_size?: string;
+    os?: string;
     purchase_date?: string;
     purchase_price?: string;
     vendor?: string;

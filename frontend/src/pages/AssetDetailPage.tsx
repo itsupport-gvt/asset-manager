@@ -229,6 +229,10 @@ export function AssetDetailPage() {
           <InfoRow icon="qr_code" label="Serial Number" value={asset.serial_number} mono />
           <InfoRow icon="storage" label="Storage" value={asset.storage} />
           <InfoRow icon="memory" label="RAM" value={asset.memory_ram} />
+          <InfoRow icon="developer_board" label="Processor" value={asset.processor} />
+          <InfoRow icon="memory" label="Graphics" value={asset.graphics} />
+          <InfoRow icon="monitor" label="Screen Size" value={asset.screen_size} />
+          <InfoRow icon="laptop_windows" label="OS" value={asset.os} />
           <InfoRow
             icon="construction" label="Condition" value={asset.condition}
             highlight={cond}

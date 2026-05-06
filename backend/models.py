@@ -18,6 +18,10 @@ class AssetResponse(BaseModel):
     notes: str
     storage: str
     memory_ram: str
+    processor: str
+    graphics: str
+    screen_size: str
+    os: str
     purchase_date: str
     purchase_price: str
     vendor: str
@@ -62,6 +66,10 @@ class CreateAssetRequest(BaseModel):
     serial_number: str
     storage: Optional[str] = ""
     memory_ram: Optional[str] = ""
+    processor: Optional[str] = ""
+    graphics: Optional[str] = ""
+    screen_size: Optional[str] = ""
+    os: Optional[str] = ""
     purchase_date: Optional[str] = ""
     purchase_price: Optional[str] = ""
     vendor: Optional[str] = ""

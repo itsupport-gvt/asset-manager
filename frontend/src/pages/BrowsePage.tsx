@@ -13,6 +13,8 @@ export function BrowsePage() {
   const [status, setStatus]   = useState(searchParams.get('status') || '');
   const [assetType, setAssetType] = useState(searchParams.get('type') || '');
   const [assignee, setAssignee]   = useState('');
+  const [ramFilter, setRamFilter] = useState('');
+  const [storageFilter, setStorageFilter] = useState('');
 
   useEffect(() => {
     api.listAssets('', '').then(setAllAssets).catch(e => setError(e.message)).finally(() => setLoading(false));
@@ -25,12 +27,14 @@ export function BrowsePage() {
     if (status && a.status.toLowerCase() !== status.toLowerCase()) return false;
     if (assetType && a.asset_type !== assetType) return false;
     if (assignee && (a.employee_display || a.username) !== assignee) return false;
+    if (ramFilter && !(a.memory_ram || '').toLowerCase().includes(ramFilter.toLowerCase())) return false;
+    if (storageFilter && !(a.storage || '').toLowerCase().includes(storageFilter.toLowerCase())) return false;
     if (q) {
       const sq = q.toLowerCase();
-      if (!`${a.asset_id} ${a.brand} ${a.model} ${a.serial_number} ${a.employee_display} ${a.location}`.toLowerCase().includes(sq)) return false;
+      if (!`${a.asset_id} ${a.brand} ${a.model} ${a.serial_number} ${a.employee_display} ${a.location} ${a.storage} ${a.memory_ram} ${a.processor} ${a.graphics} ${a.os}`.toLowerCase().includes(sq)) return false;
     }
     return true;
-  }), [allAssets, q, status, assetType, assignee]);
+  }), [allAssets, q, status, assetType, assignee, ramFilter, storageFilter]);
 
   const selStyle: React.CSSProperties = {
     width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8,
@@ -92,9 +96,25 @@ export function BrowsePage() {
           </select>
         </div>
 
-        {(q || status || assetType || assignee) && (
+        <div style={{ flex: '1 1 120px' }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>RAM</label>
+          <select value={ramFilter} onChange={e => setRamFilter(e.target.value)} style={selStyle}>
+            <option value="">Any RAM</option>
+            {['4 GB','8 GB','16 GB','32 GB','64 GB'].map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+
+        <div style={{ flex: '1 1 130px' }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Storage</label>
+          <select value={storageFilter} onChange={e => setStorageFilter(e.target.value)} style={selStyle}>
+            <option value="">Any storage</option>
+            {['128 GB','256 GB','512 GB','1 TB','2 TB'].map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+
+        {(q || status || assetType || assignee || ramFilter || storageFilter) && (
           <button className="md-btn md-btn-outlined" style={{ fontSize: 12, padding: '8px 14px', alignSelf: 'flex-end' }}
-            onClick={() => { setQ(''); setStatus(''); setAssetType(''); setAssignee(''); }}>
+            onClick={() => { setQ(''); setStatus(''); setAssetType(''); setAssignee(''); setRamFilter(''); setStorageFilter(''); }}>
             <span className="icon icon-sm">filter_alt_off</span> Clear
           </button>
         )}

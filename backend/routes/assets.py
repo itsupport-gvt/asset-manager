@@ -34,6 +34,10 @@ def _db_asset_to_response(asset: DBAsset, db: Session) -> AssetResponse:
         notes=asset.notes or "",
         storage=asset.storage or "",
         memory_ram=asset.memory_ram or "",
+        processor=asset.processor or "",
+        graphics=asset.graphics or "",
+        screen_size=asset.screen_size or "",
+        os=asset.os or "",
         purchase_date=asset.purchase_date or "",
         purchase_price=asset.purchase_price or "",
         vendor=asset.vendor or "",
@@ -222,6 +226,12 @@ async def sync_single_asset(asset_id: str, db: Session = Depends(get_db)):
             "Charger Serial":   asset.charger_serial or "",
             "Charger_Notes":    asset.charger_notes or "",
             "Charger Notes":    asset.charger_notes or "",
+            "Processor":        asset.processor or "",
+            "Graphics":         asset.graphics or "",
+            "Screen_Size":      asset.screen_size or "",
+            "Screen Size":      asset.screen_size or "",
+            "OS":               asset.os or "",
+            "Operating System": asset.os or "",
         }
         row_values = [field_map.get(h, "") for h in headers]
 

@@ -291,6 +291,10 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         serial_number=serial_up,
         storage=req.storage,
         memory_ram=req.memory_ram,
+        processor=req.processor,
+        graphics=req.graphics,
+        screen_size=req.screen_size,
+        os=req.os,
         purchase_date=req.purchase_date,
         purchase_price=req.purchase_price,
         vendor=req.vendor,
@@ -408,6 +412,10 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         ("serial_number", req.serial_number.upper().strip() if req.serial_number else req.serial_number),
         ("storage",       req.storage),
         ("memory_ram",    req.memory_ram),
+        ("processor",     req.processor),
+        ("graphics",      req.graphics),
+        ("screen_size",   req.screen_size),
+        ("os",            req.os),
         ("purchase_date", req.purchase_date),
         ("purchase_price",req.purchase_price),
         ("vendor",        req.vendor),
@@ -446,6 +454,14 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         db_asset.storage = req.storage
     if req.memory_ram is not None:
         db_asset.memory_ram = req.memory_ram
+    if req.processor is not None:
+        db_asset.processor = req.processor
+    if req.graphics is not None:
+        db_asset.graphics = req.graphics
+    if req.screen_size is not None:
+        db_asset.screen_size = req.screen_size
+    if req.os is not None:
+        db_asset.os = req.os
     if req.purchase_date is not None:
         db_asset.purchase_date = req.purchase_date
     if req.purchase_price is not None:

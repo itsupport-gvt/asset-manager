@@ -161,6 +161,10 @@ def sync_from_excel(db: Session):
                     existing.charger_model  = _get(row, "Charger_Model", "Charger Model", fallback=existing.charger_model)
                     existing.charger_serial = _get(row, "Charger_Serial", "Charger Serial", fallback=existing.charger_serial)
                     existing.charger_notes  = _get(row, "Charger_Notes", "Charger Notes", fallback=existing.charger_notes)
+                    existing.processor    = _get(row, "Processor", fallback=existing.processor)
+                    existing.graphics     = _get(row, "Graphics", fallback=existing.graphics)
+                    existing.screen_size  = _get(row, "Screen_Size", "Screen Size", fallback=existing.screen_size)
+                    existing.os           = _get(row, "OS", "Operating System", fallback=existing.os)
                     qr_from_excel = str(row.get("Asset_ID_QR", row.get("AssetIDQR", ""))).strip()
                     existing.asset_id_qr = qr_from_excel if qr_from_excel and qr_from_excel != "None" else asset_id.replace("-", "")
                     existing.needs_sync = False
@@ -190,6 +194,10 @@ def sync_from_excel(db: Session):
                         charger_model=_get(row, "Charger_Model", "Charger Model"),
                         charger_serial=_get(row, "Charger_Serial", "Charger Serial"),
                         charger_notes=_get(row, "Charger_Notes", "Charger Notes"),
+                        processor=_get(row, "Processor"),
+                        graphics=_get(row, "Graphics"),
+                        screen_size=_get(row, "Screen_Size", "Screen Size"),
+                        os=_get(row, "OS", "Operating System"),
                         needs_sync=False
                     ))
                     new_assets += 1
@@ -437,6 +445,12 @@ def sync_to_excel(db: Session):
                 "Charger Serial":   asset.charger_serial or "",
                 "Charger_Notes":    asset.charger_notes or "",
                 "Charger Notes":    asset.charger_notes or "",
+                "Processor":        asset.processor or "",
+                "Graphics":         asset.graphics or "",
+                "Screen_Size":      asset.screen_size or "",
+                "Screen Size":      asset.screen_size or "",
+                "OS":               asset.os or "",
+                "Operating System": asset.os or "",
             }
             row_values = [field_map.get(h, "") for h in headers]
             print(f"[sync_to_excel] Pushing asset {asset.asset_id} — {asset.status}")
