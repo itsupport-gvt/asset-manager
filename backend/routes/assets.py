@@ -33,6 +33,7 @@ def _db_asset_to_response(asset: DBAsset, db: Session) -> AssetResponse:
         location=asset.location or "",
         notes=asset.notes or "",
         storage=asset.storage or "",
+        storage_2=asset.storage_2 or "",
         memory_ram=asset.memory_ram or "",
         processor=asset.processor or "",
         graphics=asset.graphics or "",
@@ -53,15 +54,16 @@ def _db_asset_to_response(asset: DBAsset, db: Session) -> AssetResponse:
 
 @router.get("/asset/{asset_id}", response_model=AssetResponse)
 async def get_asset(asset_id: str, db: Session = Depends(get_db)):
-    """Lookup a single asset by AssetID or the hyphen-less QR ID."""
-    # Normalise — strip hyphens to allow both formats
-    clean = asset_id.replace("-", "")
+    """Lookup a single asset by AssetID or the hyphen-less QR ID (case-insensitive)."""
+    upper = asset_id.strip().upper()
+    clean = upper.replace("-", "")
     db_asset = (
         db.query(DBAsset)
         .filter(
-            (DBAsset.asset_id == asset_id) |
-            (DBAsset.asset_id_qr == asset_id) |
-            (DBAsset.asset_id_qr == clean)
+            DBAsset.asset_id.ilike(upper) |
+            DBAsset.asset_id.ilike(asset_id) |
+            DBAsset.asset_id_qr.ilike(asset_id) |
+            DBAsset.asset_id_qr.ilike(clean)
         )
         .first()
     )
@@ -191,6 +193,8 @@ async def sync_single_asset(asset_id: str, db: Session = Depends(get_db)):
             "SerialNumber":     asset.serial_number or "",
             # Specs
             "Storage":          asset.storage or "",
+            "Storage_2":        asset.storage_2 or "",
+            "Secondary Storage": asset.storage_2 or "",
             "RAM":              asset.memory_ram or "",
             "Memory(RAM)":      asset.memory_ram or "",
             # Purchase info variants

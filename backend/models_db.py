@@ -34,7 +34,8 @@ class DBAsset(Base):
     # Specs & Info
     location = Column(String, nullable=True)
     notes = Column(String, nullable=True)
-    storage = Column(String, nullable=True)
+    storage = Column(String, nullable=True)   # primary drive, e.g. "512 GB NVMe SSD"
+    storage_2 = Column(String, nullable=True)  # secondary drive, e.g. "1 TB HDD"
     memory_ram = Column(String, nullable=True)
     processor = Column(String, nullable=True)
     graphics = Column(String, nullable=True)

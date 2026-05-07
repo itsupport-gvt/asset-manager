@@ -30,8 +30,9 @@ export function BrowsePage() {
     if (ramFilter && !(a.memory_ram || '').toLowerCase().includes(ramFilter.toLowerCase())) return false;
     if (storageFilter && !(a.storage || '').toLowerCase().includes(storageFilter.toLowerCase())) return false;
     if (q) {
-      const sq = q.toLowerCase();
-      if (!`${a.asset_id} ${a.brand} ${a.model} ${a.serial_number} ${a.employee_display} ${a.location} ${a.storage} ${a.memory_ram} ${a.processor} ${a.graphics} ${a.os}`.toLowerCase().includes(sq)) return false;
+      const sq = q.toLowerCase().replace(/-/g, '');
+      const text = `${a.asset_id.replace(/-/g, '')} ${a.asset_id} ${a.brand} ${a.model} ${a.serial_number} ${a.employee_display} ${a.location} ${a.storage} ${a.memory_ram} ${a.processor} ${a.graphics} ${a.os}`.toLowerCase();
+      if (!text.includes(sq)) return false;
     }
     return true;
   }), [allAssets, q, status, assetType, assignee, ramFilter, storageFilter]);

@@ -47,6 +47,8 @@ def run_migrations():
         ("assets",           "charger_model",    "TEXT"),
         ("assets",           "charger_serial",   "TEXT"),
         ("assets",           "charger_notes",    "TEXT"),
+        # v1.3.7 — secondary storage drive
+        ("assets",           "storage_2",        "TEXT"),
         # v1.3.6 — new tech spec fields
         ("assets",           "processor",        "TEXT"),
         ("assets",           "graphics",         "TEXT"),

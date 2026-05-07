@@ -52,6 +52,29 @@ function InfoRow({ icon, label, value, mono, link, highlight }: {
   );
 }
 
+function formatDate(val?: string): string {
+  if (!val) return '';
+  // Excel serial date (e.g. 46092)
+  const n = Number(val);
+  if (!isNaN(n) && n > 30000 && n < 60000) {
+    const dt = new Date((n - 25569) * 86400 * 1000);
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  // ISO or other parseable date string
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  return val;
+}
+
+function formatPrice(val?: string): string {
+  if (!val) return '';
+  const n = parseFloat(val.replace(/[^\d.]/g, ''));
+  if (isNaN(n)) return val;
+  return `AED ${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
 function SectionHeader({ icon, title, color = 'var(--primary)' }: { icon: string; title: string; color?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, paddingBottom: 10, borderBottom: '2px solid var(--border)' }}>
@@ -218,25 +241,23 @@ export function AssetDetailPage() {
             </div>
           )}
           <InfoRow icon="badge" label="Assignment ID" value={asset.assignment_id} mono />
-          <InfoRow icon="event" label="Date Assigned" value={asset.date_assigned} />
+          <InfoRow icon="event" label="Date Assigned" value={formatDate(asset.date_assigned)} />
           <InfoRow icon="place" label="Location" value={asset.location} />
         </div>
 
         {/* Hardware Card */}
         <div className="md-card" style={{ padding: 22 }}>
           <SectionHeader icon="memory" title="Hardware Details" />
-          <InfoRow icon="tag" label="Asset Type" value={asset.asset_type} />
-          <InfoRow icon="qr_code" label="Serial Number" value={asset.serial_number} mono />
-          <InfoRow icon="storage" label="Storage" value={asset.storage} />
-          <InfoRow icon="memory" label="RAM" value={asset.memory_ram} />
-          <InfoRow icon="developer_board" label="Processor" value={asset.processor} />
-          <InfoRow icon="memory" label="Graphics" value={asset.graphics} />
-          <InfoRow icon="monitor" label="Screen Size" value={asset.screen_size} />
-          <InfoRow icon="laptop_windows" label="OS" value={asset.os} />
-          <InfoRow
-            icon="construction" label="Condition" value={asset.condition}
-            highlight={cond}
-          />
+          <InfoRow icon="tag"           label="Asset Type"    value={asset.asset_type} />
+          <InfoRow icon="qr_code"       label="Serial Number" value={asset.serial_number} mono />
+          <InfoRow icon="construction"  label="Condition"     value={asset.condition} highlight={cond} />
+          <InfoRow icon="developer_board" label="Processor"   value={asset.processor} />
+          <InfoRow icon="memory"        label="RAM"           value={asset.memory_ram} />
+          <InfoRow icon="videogame_asset" label="Graphics"    value={asset.graphics} />
+          <InfoRow icon="monitor"       label="Screen Size"   value={asset.screen_size} />
+          <InfoRow icon="laptop_windows" label="OS"           value={asset.os} />
+          <InfoRow icon="storage"       label="Primary Drive" value={asset.storage} />
+          <InfoRow icon="storage"       label="Secondary Drive" value={asset.storage_2} />
         </div>
 
         {/* Charger Card — Laptop only */}
@@ -259,11 +280,11 @@ export function AssetDetailPage() {
         {/* Purchase Card */}
         <div className="md-card" style={{ padding: 22 }}>
           <SectionHeader icon="receipt_long" title="Purchase Details" color="#b06000" />
-          <InfoRow icon="calendar_today" label="Purchase Date" value={asset.purchase_date} />
-          <InfoRow icon="payments" label="Purchase Price" value={asset.purchase_price} />
-          <InfoRow icon="storefront" label="Vendor" value={asset.vendor} />
-          <InfoRow icon="receipt" label="Invoice Ref" value={asset.invoice_ref} mono />
-          <InfoRow icon="shield" label="Warranty End" value={asset.warranty_end} />
+          <InfoRow icon="calendar_today" label="Purchase Date"  value={formatDate(asset.purchase_date)} />
+          <InfoRow icon="payments"       label="Purchase Price" value={formatPrice(asset.purchase_price)} />
+          <InfoRow icon="storefront"     label="Vendor"         value={asset.vendor} />
+          <InfoRow icon="receipt"        label="Invoice Ref"    value={asset.invoice_ref} mono />
+          <InfoRow icon="shield"         label="Warranty End"   value={formatDate(asset.warranty_end)} />
         </div>
 
         {/* Notes & Security — only show if there's data */}

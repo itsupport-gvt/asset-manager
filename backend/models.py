@@ -17,6 +17,7 @@ class AssetResponse(BaseModel):
     location: str
     notes: str
     storage: str
+    storage_2: str
     memory_ram: str
     processor: str
     graphics: str
@@ -65,6 +66,7 @@ class CreateAssetRequest(BaseModel):
     model: str
     serial_number: str
     storage: Optional[str] = ""
+    storage_2: Optional[str] = ""
     memory_ram: Optional[str] = ""
     processor: Optional[str] = ""
     graphics: Optional[str] = ""

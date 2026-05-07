@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ScanField } from '../components/ScanField';
-import { SpecInput, RAM_UNITS, STORAGE_UNITS, SCREEN_UNITS } from '../components/SpecInput';
+import { SpecInput, StorageInput, RAM_UNITS, SCREEN_UNITS } from '../components/SpecInput';
 import type { CreateAssetRequest } from '../lib/types';
 
 const ASSET_TYPES = [
@@ -12,9 +12,12 @@ const ASSET_TYPES = [
     'Webcam', 'Headset', 'Land Phone', 'IP Phone',
 ];
 const CONDITIONS = ['Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
-const STATUSES = ['In Stock', 'Active', 'Unassigned', 'Missing', 'Retired'];
-const OS_OPTIONS = ['Windows 11', 'Windows 10', 'Windows 11 Pro', 'Windows 10 Pro', 'macOS', 'Ubuntu', 'Debian', 'Chrome OS', 'Android', 'iOS', 'Other'];
-const SPEC_TYPES = new Set(['Laptop', 'Desktop', 'Server', 'Mobile Phone', 'Smart TV', 'Printer']);
+const STATUSES   = ['In Stock', 'Active', 'Unassigned', 'Missing', 'Retired'];
+const OS_OPTIONS = [
+    'Windows 11', 'Windows 11 Pro', 'Windows 10', 'Windows 10 Pro',
+    'macOS', 'Ubuntu', 'Debian', 'Chrome OS', 'Android', 'iOS', 'Other',
+];
+const COMPUTE_TYPES = new Set(['Laptop', 'Desktop', 'Server', 'Mobile Phone', 'Smart TV', 'Printer']);
 
 const selStyle: React.CSSProperties = {
     width: '100%', padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8,
@@ -30,12 +33,22 @@ function SectionTitle({ icon, title }: { icon: string; title: string }) {
     );
 }
 
+function SubDivider({ label }: { label: string }) {
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, gridColumn: '1 / -1', margin: '4px 0' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.6px', whiteSpace: 'nowrap' }}>{label}</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
+    );
+}
+
 export function NewAssetPage() {
     const nav = useNavigate();
     const [form, setForm] = useState<CreateAssetRequest>({
         asset_type: '', status: 'In Stock', condition: 'New',
-        brand: '', model: '', serial_number: '', storage: '', memory_ram: '',
-        processor: '', graphics: '', screen_size: '', os: '',
+        brand: '', model: '', serial_number: '',
+        storage: '', storage_2: '',
+        memory_ram: '', processor: '', graphics: '', screen_size: '', os: '',
         purchase_date: '', purchase_price: '', vendor: '', invoice_ref: '',
         warranty_end: '', location: '', notes: '', pin_password: '',
         charger_model: '', charger_serial: '', charger_notes: '',
@@ -58,6 +71,8 @@ export function NewAssetPage() {
         }
     }
 
+    const isCompute = COMPUTE_TYPES.has(form.asset_type);
+
     return (
         <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
             <div>
@@ -65,12 +80,14 @@ export function NewAssetPage() {
                 <p style={{ color: 'var(--text-2)', fontSize: 14, marginTop: 4 }}>Add a new piece of IT equipment to the inventory.</p>
             </div>
 
-            {/* Classification */}
+            {/* ── Classification ── */}
             <div className="md-card" style={{ padding: 24 }}>
                 <SectionTitle icon="category" title="Classification" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                     <div style={{ gridColumn: '1 / -1' }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Asset Type <span style={{ color: 'var(--danger)' }}>*</span></label>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>
+                            Asset Type <span style={{ color: 'var(--danger)' }}>*</span>
+                        </label>
                         <select value={form.asset_type} onChange={sel('asset_type')} style={selStyle}>
                             <option value="">— Select type —</option>
                             {ASSET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -92,69 +109,84 @@ export function NewAssetPage() {
                 </div>
             </div>
 
-            {/* Hardware */}
+            {/* ── Hardware Identity ── */}
             <div className="md-card" style={{ padding: 24 }}>
-                <SectionTitle icon="memory" title="Hardware Details" />
+                <SectionTitle icon="devices" title="Hardware Identity" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                     <ScanField label="Brand" value={form.brand} onChange={set('brand')} placeholder="e.g. Dell" />
-                    <ScanField label="Model" value={form.model} onChange={set('model')} placeholder="e.g. XPS 13" />
+                    <ScanField label="Model" value={form.model} onChange={set('model')} placeholder="e.g. XPS 15" />
                     <div style={{ gridColumn: '1 / -1' }}>
-                        <ScanField label="Serial Number" value={form.serial_number} onChange={set('serial_number')} />
+                        <ScanField label="Serial Number" value={form.serial_number} onChange={set('serial_number')} placeholder="S/N from device label" />
                     </div>
-                    <SpecInput label="Storage" value={form.storage || ''} onChange={set('storage')} units={STORAGE_UNITS} placeholder="512" />
-                    <SpecInput label="Memory (RAM)" value={form.memory_ram || ''} onChange={set('memory_ram')} units={RAM_UNITS} placeholder="16" />
                 </div>
             </div>
 
-            {/* Technical Specs — Laptop / Desktop / Server */}
-            {SPEC_TYPES.has(form.asset_type) && (
+            {/* ── Technical Specifications (compute devices only) ── */}
+            {isCompute && (
                 <div className="md-card" style={{ padding: 24, borderLeft: '3px solid var(--primary)' }}>
                     <SectionTitle icon="developer_board" title="Technical Specifications" />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                        <ScanField label="Processor" value={form.processor || ''} onChange={set('processor')} placeholder="e.g. Intel Core i7-1355U" />
-                        <ScanField label="Graphics" value={form.graphics || ''} onChange={set('graphics')} placeholder="e.g. NVIDIA RTX 3060" />
-                        <SpecInput label="Screen Size" value={form.screen_size || ''} onChange={set('screen_size')} units={SCREEN_UNITS} placeholder="15.6" />
+
+                        {/* Compute */}
+                        <SubDivider label="Compute" />
+                        <ScanField label="Processor (CPU)" value={form.processor || ''} onChange={set('processor')} placeholder="e.g. Intel Core i7-1355U" />
+                        <SpecInput  label="Memory (RAM)" value={form.memory_ram || ''} onChange={set('memory_ram')} units={RAM_UNITS} placeholder="16" />
+                        <ScanField label="Graphics (GPU)" value={form.graphics || ''} onChange={set('graphics')} placeholder="e.g. NVIDIA RTX 4060" />
                         <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Operating System</label>
-                            <select value={form.os || ''} onChange={e => set('os')(e.target.value)} style={{ ...selStyle, width: '100%' }}>
+                            <select value={form.os || ''} onChange={e => set('os')(e.target.value)} style={selStyle}>
                                 <option value="">— Select OS —</option>
                                 {OS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
                         </div>
+
+                        {/* Display */}
+                        {['Laptop', 'Desktop', 'Monitor', 'Smart TV', 'Mobile Phone'].includes(form.asset_type) && (
+                            <>
+                                <SubDivider label="Display" />
+                                <SpecInput label="Screen Size" value={form.screen_size || ''} onChange={set('screen_size')} units={SCREEN_UNITS} placeholder="15.6" />
+                                <div />
+                            </>
+                        )}
+
+                        {/* Storage */}
+                        <SubDivider label="Storage" />
+                        <StorageInput label="Primary Drive" value={form.storage || ''} onChange={set('storage')} placeholder="512" />
+                        <StorageInput label="Secondary Drive" value={form.storage_2 || ''} onChange={set('storage_2')} optional placeholder="0" />
                     </div>
                 </div>
             )}
 
-            {/* Purchase */}
+            {/* ── Purchase Details ── */}
             <div className="md-card" style={{ padding: 24 }}>
                 <SectionTitle icon="receipt_long" title="Purchase Details" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <ScanField label="Purchase Date" value={form.purchase_date || ''} onChange={set('purchase_date')} type="date" />
-                    <ScanField label="Purchase Price" value={form.purchase_price || ''} onChange={set('purchase_price')} />
-                    <ScanField label="Vendor" value={form.vendor || ''} onChange={set('vendor')} />
-                    <ScanField label="Invoice Reference" value={form.invoice_ref || ''} onChange={set('invoice_ref')} />
-                    <ScanField label="Warranty End" value={form.warranty_end || ''} onChange={set('warranty_end')} type="date" />
+                    <ScanField label="Purchase Date"      value={form.purchase_date || ''}  onChange={set('purchase_date')}  type="date" />
+                    <ScanField label="Purchase Price"     value={form.purchase_price || ''} onChange={set('purchase_price')} placeholder="e.g. 1200" />
+                    <ScanField label="Vendor / Supplier"  value={form.vendor || ''}         onChange={set('vendor')}         placeholder="e.g. Ingram Micro" />
+                    <ScanField label="Invoice Reference"  value={form.invoice_ref || ''}    onChange={set('invoice_ref')}    />
+                    <ScanField label="Warranty End Date"  value={form.warranty_end || ''}   onChange={set('warranty_end')}   type="date" />
                 </div>
             </div>
 
-            {/* Additional */}
+            {/* ── Deployment & Notes ── */}
             <div className="md-card" style={{ padding: 24 }}>
-                <SectionTitle icon="tune" title="Additional Info" />
+                <SectionTitle icon="tune" title="Deployment & Notes" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <ScanField label="Location" value={form.location || ''} onChange={set('location')} />
+                    <ScanField label="Location"     value={form.location || ''}     onChange={set('location')} />
                     <ScanField label="PIN / Password" value={form.pin_password || ''} onChange={set('pin_password')} />
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Notes</label>
                         <textarea
                             value={form.notes} onChange={e => set('notes')(e.target.value)} rows={3}
                             className="md-input" style={{ resize: 'vertical', minHeight: 80, padding: '10px 14px' }}
-                            placeholder="Any extra details..."
+                            placeholder="Any extra details…"
                         />
                     </div>
                 </div>
             </div>
 
-            {/* Charger Details — Laptop only */}
+            {/* ── Charger Details (Laptop only) ── */}
             {form.asset_type === 'Laptop' && (
                 <div className="md-card" style={{ padding: 24, borderLeft: '3px solid var(--primary)' }}>
                     <SectionTitle icon="power" title="Charger Details" />
@@ -162,14 +194,14 @@ export function NewAssetPage() {
                         Track the charger bundled with this laptop.
                     </p>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                        <ScanField label="Charger Model" value={form.charger_model || ''} onChange={set('charger_model')} placeholder="e.g. Dell 65W USB-C" />
+                        <ScanField label="Charger Model"         value={form.charger_model || ''}  onChange={set('charger_model')}  placeholder="e.g. Dell 65W USB-C" />
                         <ScanField label="Charger Serial Number" value={form.charger_serial || ''} onChange={set('charger_serial')} placeholder="e.g. CH-XXXXXX" />
                         <div style={{ gridColumn: '1 / -1' }}>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Charger Notes</label>
                             <textarea
                                 value={form.charger_notes || ''} onChange={e => set('charger_notes')(e.target.value)} rows={2}
                                 className="md-input" style={{ resize: 'vertical', minHeight: 60, padding: '10px 14px' }}
-                                placeholder="e.g. Charger missing, cable frayed..."
+                                placeholder="e.g. Charger missing, cable frayed…"
                             />
                         </div>
                     </div>
@@ -182,7 +214,6 @@ export function NewAssetPage() {
                 </div>
             )}
 
-            {/* Actions */}
             <div style={{ display: 'flex', gap: 12 }}>
                 <button onClick={() => nav(-1)} className="md-btn md-btn-outlined" style={{ flex: 1 }}>Cancel</button>
                 <button onClick={submit} disabled={loading} className="md-btn md-btn-primary" style={{ flex: 2 }}>

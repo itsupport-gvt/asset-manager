@@ -290,6 +290,7 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
         model=req.model,
         serial_number=serial_up,
         storage=req.storage,
+        storage_2=req.storage_2,
         memory_ram=req.memory_ram,
         processor=req.processor,
         graphics=req.graphics,
@@ -452,6 +453,8 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         db_asset.serial_number = req.serial_number.upper().strip()
     if req.storage is not None:
         db_asset.storage = req.storage
+    if req.storage_2 is not None:
+        db_asset.storage_2 = req.storage_2
     if req.memory_ram is not None:
         db_asset.memory_ram = req.memory_ram
     if req.processor is not None:

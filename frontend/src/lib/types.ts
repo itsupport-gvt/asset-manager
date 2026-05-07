@@ -13,6 +13,7 @@ export interface Asset {
     location: string;
     notes: string;
     storage: string;
+    storage_2: string;
     memory_ram: string;
     processor: string;
     graphics: string;
@@ -68,6 +69,7 @@ export interface CreateAssetRequest {
     model: string;
     serial_number: string;
     storage?: string;
+    storage_2?: string;
     memory_ram?: string;
     processor?: string;
     graphics?: string;

@@ -10,6 +10,69 @@ from graph_client import graph, _excel_serial_to_str
 from models_db import DBAsset, DBEmployee, DBAssignmentLog
 
 
+import re
+
+def _normalize_storage(val: str) -> str:
+    """
+    Normalize messy storage strings from Excel.
+    Examples: '256' → '256 GB SSD', '1TB' → '1 TB SSD', '128 SSD' → '128 GB SSD',
+              '512GB SSD' → '512 GB SSD', '1TB HDD' → '1 TB HDD'
+    Rule: missing unit → GB; missing drive type → SSD.
+    """
+    if not val:
+        return ""
+    v = val.strip()
+    m = re.match(
+        r'^(\d+(?:\.\d+)?)\s*(GB|TB|MB)?\s*(NVMe SSD|NVMe|SSD|HDD|eMMC|Flash)?\s*$',
+        v, re.IGNORECASE
+    )
+    if not m:
+        return v
+    num   = m.group(1)
+    unit  = (m.group(2) or 'GB').upper()
+    drive_raw = (m.group(3) or 'SSD')
+    drive_map = {
+        'NVME SSD': 'NVMe SSD', 'NVME': 'NVMe', 'SSD': 'SSD',
+        'HDD': 'HDD', 'EMMC': 'eMMC', 'FLASH': 'Flash',
+    }
+    drive = drive_map.get(drive_raw.upper(), drive_raw)
+    return f"{num} {unit} {drive}"
+
+
+def _normalize_ram(val: str) -> str:
+    """
+    Normalize RAM strings: '8' → '8 GB', '16 GB' → '16 GB', '32' → '32 GB'.
+    """
+    if not val:
+        return ""
+    v = val.strip()
+    m = re.match(r'^(\d+(?:\.\d+)?)\s*(GB|MB)?\s*$', v, re.IGNORECASE)
+    if not m:
+        return v
+    num  = m.group(1)
+    unit = (m.group(2) or 'GB').upper()
+    return f"{num} {unit}"
+
+
+def _normalize_date(val: str) -> str:
+    """
+    Convert Excel serial date numbers to ISO date strings (YYYY-MM-DD).
+    '46092' → '2026-01-03'. Leaves existing date strings unchanged.
+    """
+    if not val:
+        return ""
+    v = val.strip()
+    try:
+        n = float(v)
+        if 30000 < n < 60000:  # plausible Excel date range (~1982–2064)
+            iso = _excel_serial_to_str(n)
+            if iso:
+                return iso[:10]
+    except (ValueError, TypeError):
+        pass
+    return v
+
+
 _sync_status = {
     "status": "idle",
     "last_sync": None,
@@ -150,9 +213,10 @@ def sync_from_excel(db: Session):
                     existing.assigned_to_email = assigned_email
                     existing.location     = _get(row, "Location", fallback=existing.location)
                     existing.notes        = _get(row, "Notes", fallback=existing.notes)
-                    existing.storage      = _get(row, "Storage", fallback=existing.storage)
-                    existing.memory_ram   = _get(row, "Memory(RAM)", "RAM", fallback=existing.memory_ram)
-                    existing.purchase_date  = _get(row, "Purchase_Date", "Purchase Date", fallback=existing.purchase_date)
+                    existing.storage      = _normalize_storage(_get(row, "Storage", fallback=existing.storage))
+                    existing.storage_2    = _normalize_storage(_get(row, "Storage_2", "Secondary Storage", fallback=existing.storage_2))
+                    existing.memory_ram   = _normalize_ram(_get(row, "Memory(RAM)", "RAM", fallback=existing.memory_ram))
+                    existing.purchase_date  = _normalize_date(_get(row, "Purchase_Date", "Purchase Date", fallback=existing.purchase_date))
                     existing.purchase_price = _get(row, "Purchase_Price", "Purchase Price", fallback=existing.purchase_price)
                     existing.vendor       = _get(row, "Vendor", fallback=existing.vendor)
                     existing.invoice_ref  = _get(row, "Invoice Reference", "Invoice Ref", fallback=existing.invoice_ref)
@@ -183,9 +247,10 @@ def sync_from_excel(db: Session):
                         assigned_to_email=assigned_email,
                         location=_get(row, "Location"),
                         notes=_get(row, "Notes"),
-                        storage=_get(row, "Storage"),
-                        memory_ram=_get(row, "Memory(RAM)", "RAM"),
-                        purchase_date=_get(row, "Purchase_Date", "Purchase Date"),
+                        storage=_normalize_storage(_get(row, "Storage")),
+                        storage_2=_normalize_storage(_get(row, "Storage_2", "Secondary Storage")),
+                        memory_ram=_normalize_ram(_get(row, "Memory(RAM)", "RAM")),
+                        purchase_date=_normalize_date(_get(row, "Purchase_Date", "Purchase Date")),
                         purchase_price=_get(row, "Purchase_Price", "Purchase Price"),
                         vendor=_get(row, "Vendor"),
                         invoice_ref=_get(row, "Invoice Reference", "Invoice Ref"),
@@ -416,6 +481,8 @@ def sync_to_excel(db: Session):
                 "Serial Number":    asset.serial_number or "",
                 "SerialNumber":     asset.serial_number or "",
                 "Storage":          asset.storage or "",
+                "Storage_2":        asset.storage_2 or "",
+                "Secondary Storage": asset.storage_2 or "",
                 "Memory(RAM)":      asset.memory_ram or "",
                 "RAM":              asset.memory_ram or "",
                 "Purchase_Date":    asset.purchase_date or "",
