@@ -79,27 +79,61 @@ SCANNER_LIB_DIR = _BASE / "scanner_static"
 if SCANNER_LIB_DIR.exists():
     app.mount("/scanner-lib", StaticFiles(directory=SCANNER_LIB_DIR), name="scanner-lib")
 
-# ── Startup & Background Sync ─────────────────────────────────────────────────
+# ── Background Sync Helpers ───────────────────────────────────────────────────
+
+import asyncio
+
+def _run_full_sync():
+    """Pull assets + employees, pull logs, push any pending changes. Runs in a thread."""
+    db = SessionLocal()
+    try:
+        print("[auto-sync] Pull from Excel…")
+        sync_from_excel(db)
+        print("[auto-sync] Pull activity logs…")
+        sync_logs_from_excel(db)
+        print("[auto-sync] Push pending changes…")
+        sync_to_excel(db)
+        print("[auto-sync] Done.")
+    except Exception as e:
+        print(f"[auto-sync] Error: {e}")
+    finally:
+        db.close()
+
+
+async def _periodic_sync_task():
+    """Runs a full sync 30 s after startup, then every 60 minutes."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _run_full_sync)
+        except Exception as e:
+            print(f"[auto-sync] Executor error: {e}")
+        await asyncio.sleep(60 * 60)
+
+
+# ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
-def startup_event():
-    """Apply schema migrations, create tables, then sync from Excel if DB is empty."""
-    # 1. Ensure tables exist
+async def startup_event():
+    """Apply migrations, create tables, then kick off auto-sync in the background."""
     Base.metadata.create_all(bind=engine)
-    # 2. Apply any schema migrations (ALTER TABLE for new columns)
     run_migrations()
-    # 3. Sync from Excel if EITHER employees OR assets are missing
+    # Seed DB synchronously on first run (no employees or assets yet)
     db = SessionLocal()
     try:
         emp_count   = db.query(DBEmployee).count()
         asset_count = db.query(DBAsset).count()
         if emp_count == 0 or asset_count == 0:
-            print(f"DB incomplete (employees={emp_count}, assets={asset_count}). Syncing from Excel...")
+            print(f"[startup] DB empty — seeding from Excel (blocking)…")
             sync_from_excel(db)
+            sync_logs_from_excel(db)
         else:
-            print(f"Database ready. {emp_count} employees, {asset_count} assets loaded.")
+            print(f"[startup] DB ready ({emp_count} employees, {asset_count} assets). Auto-sync will run in background.")
     finally:
         db.close()
+    # Schedule periodic full sync (first run 15 s after startup)
+    asyncio.create_task(_periodic_sync_task())
 
 # ── REST routes ───────────────────────────────────────────────────────────────
 
@@ -125,10 +159,15 @@ def push_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
 
 @app.post("/api/sync/pull")
 def pull_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
-    """Pulls current Excel state down to local DB (overwrites)."""
+    """Pulls current Excel state (assets + employees + activity logs) down to local DB."""
     try:
         sync_from_excel(db)
-        return {"success": True, "message": "Pulled changes from Excel."}
+        log_result = sync_logs_from_excel(db)
+        return {
+            "success": True,
+            "message": f"Pulled from Excel. Imported {log_result['imported']} new log entries.",
+            **log_result,
+        }
     except Exception as e:
         traceback.print_exc()
         return {"success": False, "detail": str(e)}

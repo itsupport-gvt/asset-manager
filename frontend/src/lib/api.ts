@@ -43,7 +43,7 @@ export const api = {
       `/api/employee/${encodeURIComponent(email)}/bulk-assign`, json(body)
     ),
   reportPreview: (email: string) => req<ReportPreview>(`/api/report/preview/${encodeURIComponent(email)}`),
-  generateReport: async (body: { employee_email: string; doc_type: string; excluded_ids: string[] }): Promise<Blob> => {
+  generateReport: async (body: { employee_email: string; doc_type: string; excluded_ids: string[]; row_notes?: Record<string, string> }): Promise<Blob> => {
     const res = await fetch('/api/report/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -109,6 +109,7 @@ export const api = {
     employee_email: string;
     doc_type: string;
     excluded_ids: string[];
+    row_notes?: Record<string, string>;
   }): Promise<Blob> => {
     const res = await fetch('/api/report/generate-docx', {
       method: 'POST',

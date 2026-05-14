@@ -1,8 +1,74 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { Employee, Asset } from '../lib/types';
+import type { Employee, Asset, ActivityLogItem } from '../lib/types';
 import { AssetCard } from '../components/AssetCard';
+
+// ── Employee Recent Activity ──────────────────────────────────────────────────
+const _EMP_ACTION_COLORS: Record<string, { bg: string; color: string }> = {
+  assign:       { bg: 'rgba(76,175,80,.12)',  color: '#2e7d32' },
+  return:       { bg: 'rgba(255,152,0,.12)',  color: '#b06000' },
+  create:       { bg: 'var(--primary-bg)',    color: 'var(--primary)' },
+  update:       { bg: 'rgba(156,39,176,.12)', color: '#7b1fa2' },
+  swap:         { bg: 'rgba(33,150,243,.12)', color: '#1565c0' },
+  'bulk return':{ bg: 'rgba(255,152,0,.12)',  color: '#b06000' },
+};
+function EmployeeRecentActivity({ email }: { email: string }) {
+  const nav = useNavigate();
+  const [items, setItems] = useState<ActivityLogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getActivity({ employee: email, page_size: 5 })
+      .then(d => setItems(d.items))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [email]);
+
+  if (loading || !items.length) return null;
+
+  return (
+    <div className="md-card" style={{ padding: 24, marginTop: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <span className="icon" style={{ color: 'var(--primary)', fontSize: 18 }}>history</span>
+        <span style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 600, fontSize: 15, color: 'var(--text-1)' }}>Recent Activity</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {items.map((item, i) => {
+          const s = _EMP_ACTION_COLORS[item.action.toLowerCase()] ?? { bg: 'var(--surface-2)', color: 'var(--text-2)' };
+          return (
+            <div key={item.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 0', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
+            }}>
+              <span style={{ padding: '1px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: s.bg, color: s.color, flexShrink: 0 }}>
+                {item.action}
+              </span>
+              <button
+                onClick={() => nav(`/asset/${encodeURIComponent(item.asset_id)}`)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', fontFamily: 'monospace', fontSize: 12, fontWeight: 600, padding: 0, flexShrink: 0 }}
+              >
+                {item.asset_id}
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {item.asset_label && item.asset_label !== item.asset_id ? item.asset_label : ''}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)', flexShrink: 0 }}>
+                {new Date(item.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <button
+        onClick={() => nav(`/activity?employee=${encodeURIComponent(email)}`)}
+        style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--primary)', fontSize: 12, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        View full activity log <span className="icon icon-sm">arrow_forward</span>
+      </button>
+    </div>
+  );
+}
 
 const CONDITIONS = ['', 'New', 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
 const REASONS = ['Resignation', 'Transfer', 'Offboarding', 'Contract End', 'Other'];
@@ -734,6 +800,9 @@ export function EmployeePage() {
           </div>
         )}
       </div>
+
+      {/* Recent Activity */}
+      {!isRoom && <EmployeeRecentActivity email={targetEmail} />}
     </div>
   );
 }

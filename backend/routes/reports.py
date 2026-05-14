@@ -279,6 +279,8 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
     employee_email = body.get("employee_email", "")
     doc_type       = body.get("doc_type", "Handover")
     excluded_ids   = set(body.get("excluded_ids", []))
+    # row_notes: {asset_id: note_text} — blank by default (not pulled from DB)
+    row_notes: dict = body.get("row_notes", {})
 
     if doc_type not in TEMPLATES:
         raise HTTPException(status_code=400, detail="doc_type must be 'Handover' or 'Return'")
@@ -297,8 +299,10 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
         .all()
     )
 
-    # Build rows with charger injection, then filter excluded
     all_rows = _asset_rows(assets)
+    # Apply custom notes: blank by default; use row_notes if user typed something
+    for row in all_rows:
+        row["notes"] = row_notes.get(row["asset_id"], "") if not row["is_charger"] else ""
     rows = [r for r in all_rows if r["asset_id"] not in excluded_ids]
 
     if not rows:
@@ -329,12 +333,13 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
     """
     Generate a Handover or Return Word document (.docx) for an employee.
 
-    Body: { "employee_email": str, "doc_type": "Handover"|"Return", "excluded_ids": [str] }
+    Body: { "employee_email": str, "doc_type": "Handover"|"Return", "excluded_ids": [str], "row_notes": {asset_id: str} }
     Returns the .docx as a file download (no PDF conversion required).
     """
     employee_email = body.get("employee_email", "")
     doc_type       = body.get("doc_type", "Handover")
     excluded_ids   = set(body.get("excluded_ids", []))
+    row_notes: dict = body.get("row_notes", {})
 
     if doc_type not in TEMPLATES:
         raise HTTPException(status_code=400, detail="doc_type must be 'Handover' or 'Return'")
@@ -354,6 +359,8 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
     )
 
     all_rows = _asset_rows(assets)
+    for row in all_rows:
+        row["notes"] = row_notes.get(row["asset_id"], "") if not row["is_charger"] else ""
     rows = [r for r in all_rows if r["asset_id"] not in excluded_ids]
 
     if not rows:

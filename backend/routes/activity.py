@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 from database import get_db
 from models_db import DBAssignmentLog, DBAsset, DBEmployee
@@ -38,10 +38,36 @@ def _build_query(
 
     if action:
         query = query.filter(DBAssignmentLog.action.ilike(f"%{action}%"))
+
     if employee:
-        query = query.filter(DBAssignmentLog.employee_email.ilike(f"%{employee}%"))
+        pattern = f"%{employee}%"
+        emp_subq = (
+            db.query(DBEmployee.email).filter(
+                or_(
+                    DBEmployee.email.ilike(pattern),
+                    DBEmployee.full_name.ilike(pattern),
+                    DBEmployee.employee_id.ilike(pattern),
+                    DBEmployee.employee_display.ilike(pattern),
+                )
+            ).subquery()
+        )
+        query = query.filter(
+            or_(
+                DBAssignmentLog.employee_email.ilike(pattern),
+                DBAssignmentLog.employee_email.in_(emp_subq),
+            )
+        )
+
     if asset_id:
-        query = query.filter(DBAssignmentLog.asset_id.ilike(f"%{asset_id}%"))
+        # Strip hyphens so "LT25120001" matches "LT-2512-0001"
+        clean = asset_id.replace("-", "")
+        query = query.filter(
+            or_(
+                DBAssignmentLog.asset_id.ilike(f"%{asset_id}%"),
+                func.replace(DBAssignmentLog.asset_id, "-", "").ilike(f"%{clean}%"),
+            )
+        )
+
     if from_date:
         try:
             from_dt = datetime.fromisoformat(from_date).replace(tzinfo=timezone.utc)
@@ -54,13 +80,26 @@ def _build_query(
             query = query.filter(DBAssignmentLog.timestamp <= to_dt)
         except ValueError:
             pass
+
     if q:
         pattern = f"%{q}%"
+        clean_q = q.replace("-", "")
+        emp_name_subq = (
+            db.query(DBEmployee.email).filter(
+                or_(
+                    DBEmployee.full_name.ilike(pattern),
+                    DBEmployee.employee_id.ilike(pattern),
+                    DBEmployee.employee_display.ilike(pattern),
+                )
+            ).subquery()
+        )
         query = query.filter(
             or_(
                 DBAssignmentLog.asset_id.ilike(pattern),
+                func.replace(DBAssignmentLog.asset_id, "-", "").ilike(f"%{clean_q}%"),
                 DBAssignmentLog.asset_label.ilike(pattern),
                 DBAssignmentLog.employee_email.ilike(pattern),
+                DBAssignmentLog.employee_email.in_(emp_name_subq),
                 DBAssignmentLog.action.ilike(pattern),
                 DBAssignmentLog.notes.ilike(pattern),
                 DBAssignmentLog.asset_type.ilike(pattern),

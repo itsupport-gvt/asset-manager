@@ -7,13 +7,25 @@ Changes are marked `needs_sync = True` to be pushed to Excel later by the SyncSe
 import json
 import random
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from sqlalchemy.orm import Session
-from database import get_db
+from database import get_db, SessionLocal
 from models_db import DBAsset, DBEmployee, DBAssignmentLog
 from models import AssignRequest, ReturnRequest, CreateAssetRequest, SwapRequest
 from config import TYPE_CODE_MAP, MASTER_TABLE
 from graph_client import graph
+from services.sync_service import sync_to_excel
+
+
+def _push_excel_bg():
+    """Pushes needs_sync rows to Excel. Runs in a FastAPI background task."""
+    db = SessionLocal()
+    try:
+        sync_to_excel(db)
+    except Exception as e:
+        print(f"[auto-push] Error: {e}")
+    finally:
+        db.close()
 
 router = APIRouter(prefix="/api")
 
@@ -27,7 +39,7 @@ def _asset_label(asset: DBAsset) -> str:
 # ── Assign ────────────────────────────────────────────────────────────────────
 
 @router.post("/asset/assign")
-async def assign_asset(req: AssignRequest, db: Session = Depends(get_db)):
+async def assign_asset(req: AssignRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_asset = db.query(DBAsset).filter(DBAsset.asset_id == req.asset_id).first()
     if not db_asset:
         raise HTTPException(status_code=404, detail=f"Asset '{req.asset_id}' not found")
@@ -64,6 +76,7 @@ async def assign_asset(req: AssignRequest, db: Session = Depends(get_db)):
         asset_label=label,
     ))
     db.commit()
+    background_tasks.add_task(_push_excel_bg)
 
     return {"success": True, "assignment_id": new_assign_id, "asset_id": req.asset_id}
 
@@ -71,7 +84,7 @@ async def assign_asset(req: AssignRequest, db: Session = Depends(get_db)):
 # ── Return ────────────────────────────────────────────────────────────────────
 
 @router.post("/asset/return")
-async def return_asset(req: ReturnRequest, db: Session = Depends(get_db)):
+async def return_asset(req: ReturnRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_asset = db.query(DBAsset).filter(DBAsset.asset_id == req.asset_id).first()
     if not db_asset:
         raise HTTPException(status_code=404, detail=f"Asset '{req.asset_id}' not found")
@@ -103,6 +116,7 @@ async def return_asset(req: ReturnRequest, db: Session = Depends(get_db)):
         asset_label=label,
     ))
     db.commit()
+    background_tasks.add_task(_push_excel_bg)
 
     return {"success": True, "returned_from": returned_from, "asset_id": req.asset_id}
 
@@ -110,7 +124,7 @@ async def return_asset(req: ReturnRequest, db: Session = Depends(get_db)):
 # ── Bulk Return (Resignation / Offboarding) ───────────────────────────────────
 
 @router.post("/employee/{employee_email}/bulk-return")
-async def bulk_return(employee_email: str, body: dict, db: Session = Depends(get_db)):
+async def bulk_return(employee_email: str, body: dict, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Return multiple assets from one employee at once.
     Body: {
@@ -168,13 +182,14 @@ async def bulk_return(employee_email: str, body: dict, db: Session = Depends(get
         returned.append(asset_id)
 
     db.commit()
+    background_tasks.add_task(_push_excel_bg)
     return {"returned": returned, "failed": failed, "total": len(returned)}
 
 
 # ── Bulk Assign ───────────────────────────────────────────────────────────────
 
 @router.post("/employee/{employee_email}/bulk-assign")
-async def bulk_assign(employee_email: str, body: dict, db: Session = Depends(get_db)):
+async def bulk_assign(employee_email: str, body: dict, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Assign multiple assets to one employee at once.
     Body: { "asset_ids": [str, ...] }
@@ -225,6 +240,7 @@ async def bulk_assign(employee_email: str, body: dict, db: Session = Depends(get
         assigned.append(asset_id)
 
     db.commit()
+    background_tasks.add_task(_push_excel_bg)
     return {"assigned": assigned, "failed": failed, "total": len(assigned)}
 
 
@@ -396,7 +412,7 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
 # ── Update ────────────────────────────────────────────────────────────────────
 
 @router.post("/asset/update/{asset_id}")
-async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Depends(get_db)):
+async def update_asset(asset_id: str, req: CreateAssetRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     db_asset = db.query(DBAsset).filter(DBAsset.asset_id == asset_id).first()
     if not db_asset:
         raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found")
@@ -511,6 +527,7 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
         asset_label=label,
     ))
     db.commit()
+    background_tasks.add_task(_push_excel_bg)
 
     return {"success": True}
 
@@ -518,7 +535,7 @@ async def update_asset(asset_id: str, req: CreateAssetRequest, db: Session = Dep
 # ── Swap ──────────────────────────────────────────────────────────────────────
 
 @router.post("/asset/swap")
-async def swap_asset(req: SwapRequest, db: Session = Depends(get_db)):
+async def swap_asset(req: SwapRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Two swap modes:
       - "person": same asset reassigned to a different employee.
@@ -575,6 +592,7 @@ async def swap_asset(req: SwapRequest, db: Session = Depends(get_db)):
             asset_label=old_label,
         ))
         db.commit()
+        background_tasks.add_task(_push_excel_bg)
         return {"success": True, "mode": "person", "asset_id": req.asset_id, "new_employee": db_new_emp.email}
 
     # ── STOCK SWAP ────────────────────────────────────────────────────────────
@@ -638,6 +656,7 @@ async def swap_asset(req: SwapRequest, db: Session = Depends(get_db)):
             asset_label=repl_label,
         ))
         db.commit()
+        background_tasks.add_task(_push_excel_bg)
         return {
             "success": True, "mode": "stock",
             "returned_asset": req.asset_id, "return_status": return_status,

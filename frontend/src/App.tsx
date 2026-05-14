@@ -221,11 +221,6 @@ function SyncButton() {
             <span className="icon icon-sm">cloud_download</span>
             Pull from Excel
           </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
-          <button onClick={pullLogs} style={menuItemStyle(false)}>
-            <span className="icon icon-sm">history</span>
-            Pull Activity Logs
-          </button>
         </div>
       )}
     </div>

@@ -28,39 +28,57 @@ function TypeBadge({ type, isCharger }: { type: string; isCharger: boolean }) {
 }
 
 function AssetRowItem({
-  row, checked, onChange,
-}: { row: ReportRow; checked: boolean; onChange: (v: boolean) => void }) {
+  row, checked, onChange, note, onNoteChange,
+}: {
+  row: ReportRow; checked: boolean; onChange: (v: boolean) => void;
+  note: string; onNoteChange: (v: string) => void;
+}) {
   const isCharger = row.is_charger;
   return (
-    <label style={{
-      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
-      cursor: 'pointer', borderRadius: 8, transition: 'background .12s',
-      background: checked ? (isCharger ? 'rgba(0,0,0,.03)' : 'var(--primary-bg)') : 'transparent',
-      marginLeft: isCharger ? 24 : 0,
-      opacity: isCharger ? 0.85 : 1,
-    }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        style={{ width: 16, height: 16, accentColor: 'var(--primary)', flexShrink: 0 }}
-      />
-      {isCharger && (
-        <span className="icon icon-sm" style={{ color: 'var(--text-3)', fontSize: 16 }}>subdirectory_arrow_right</span>
-      )}
-      <TypeBadge type={row.asset_type} isCharger={isCharger} />
-      <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-2)', flexShrink: 0 }}>
-        {row.asset_id || '—'}
-      </span>
-      <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {[row.brand, row.model].filter(Boolean).join(' ') || row.asset_type}
-      </span>
-      {row.serial_number && (
-        <span style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace', flexShrink: 0 }}>
-          S/N: {row.serial_number}
+    <div style={{ marginLeft: isCharger ? 24 : 0, opacity: isCharger ? 0.85 : 1 }}>
+      <label style={{
+        display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
+        cursor: 'pointer', borderRadius: 8, transition: 'background .12s',
+        background: checked ? (isCharger ? 'rgba(0,0,0,.03)' : 'var(--primary-bg)') : 'transparent',
+      }}>
+        <input
+          type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
+          style={{ width: 16, height: 16, accentColor: 'var(--primary)', flexShrink: 0 }}
+        />
+        {isCharger && <span className="icon icon-sm" style={{ color: 'var(--text-3)', fontSize: 16 }}>subdirectory_arrow_right</span>}
+        <TypeBadge type={row.asset_type} isCharger={isCharger} />
+        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-2)', flexShrink: 0 }}>
+          {row.asset_id || '—'}
         </span>
+        <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {[row.brand, row.model].filter(Boolean).join(' ') || row.asset_type}
+        </span>
+        {row.serial_number && (
+          <span style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace', flexShrink: 0 }}>
+            S/N: {row.serial_number}
+          </span>
+        )}
+      </label>
+      {/* Per-row notes — blank by default, not pulled from Excel */}
+      {!isCharger && (
+        <div style={{ paddingLeft: 44, paddingRight: 16, paddingBottom: 6 }}>
+          <input
+            type="text"
+            value={note}
+            onChange={e => { e.stopPropagation(); onNoteChange(e.target.value); }}
+            onClick={e => e.stopPropagation()}
+            placeholder="Add note for this line (optional)…"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              height: 28, fontSize: 11, padding: '0 8px',
+              border: `1px solid ${note ? 'var(--primary)' : 'var(--border)'}`,
+              borderRadius: 5, background: 'var(--surface)',
+              color: 'var(--text-1)', outline: 'none',
+            }}
+          />
+        </div>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -77,8 +95,9 @@ export function ReportPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState('');
 
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [generating, setGenerating] = useState(false);
+  const [excluded,    setExcluded]    = useState<Set<string>>(new Set());
+  const [rowNotes,    setRowNotes]    = useState<Record<string, string>>({});
+  const [generating,  setGenerating]  = useState(false);
   const [generatingDocx, setGeneratingDocx] = useState(false);
   const [genError, setGenError] = useState('');
 
@@ -92,6 +111,7 @@ export function ReportPage() {
     setLoadingPreview(true);
     setPreviewError('');
     setExcluded(new Set());
+    setRowNotes({});
     api.reportPreview(selectedEmp.email)
       .then(p => setPreview(p))
       .catch(e => setPreviewError(e.message))
@@ -138,6 +158,7 @@ export function ReportPage() {
         employee_email: selectedEmp.email,
         doc_type: docType,
         excluded_ids: excludedIds,
+        row_notes: rowNotes,
       });
       const name = selectedEmp.full_name.replace(/\s+/g, '_');
       const empId = selectedEmp.employee_id || '';
@@ -162,6 +183,7 @@ export function ReportPage() {
         employee_email: selectedEmp.email,
         doc_type: docType,
         excluded_ids: excludedIds,
+        row_notes: rowNotes,
       });
       const name = selectedEmp.full_name.replace(/\s+/g, '_');
       const empId = selectedEmp.employee_id || '';
@@ -319,6 +341,8 @@ export function ReportPage() {
                     row={row}
                     checked={isChecked(row)}
                     onChange={() => toggleRow(row)}
+                    note={rowNotes[row.asset_id] ?? ''}
+                    onNoteChange={v => setRowNotes(prev => ({ ...prev, [row.asset_id]: v }))}
                   />
                 ))}
               </div>

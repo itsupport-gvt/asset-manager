@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { ActivityLogItem, ActivityLogPage } from '../lib/types';
 
@@ -154,20 +154,23 @@ function Pagination({ page, pages, onPage }: { page: number; pages: number; onPa
 
 export function ActivityLogPage() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  // filters
-  const [filterQ,        setFilterQ]        = useState('');
-  const [filterAction,   setFilterAction]   = useState('');
-  const [filterEmployee, setFilterEmployee] = useState('');
-  const [filterAssetId,  setFilterAssetId]  = useState('');
-  const [filterFrom,     setFilterFrom]     = useState('');
-  const [filterTo,       setFilterTo]       = useState('');
+  // Filters — pre-populated from URL params (e.g. ?asset_id=X or ?employee=Y)
+  const [filterQ,        setFilterQ]        = useState(searchParams.get('q')        || '');
+  const [filterAction,   setFilterAction]   = useState(searchParams.get('action')   || '');
+  const [filterEmployee, setFilterEmployee] = useState(searchParams.get('employee') || '');
+  const [filterAssetId,  setFilterAssetId]  = useState(searchParams.get('asset_id') || '');
+  const [filterFrom,     setFilterFrom]     = useState(searchParams.get('from')     || '');
+  const [filterTo,       setFilterTo]       = useState(searchParams.get('to')       || '');
 
   // data
-  const [data,    setData]    = useState<ActivityLogPage | null>(null);
-  const [page,    setPage]    = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const [data,       setData]       = useState<ActivityLogPage | null>(null);
+  const [page,       setPage]       = useState(1);
+  const [loading,    setLoading]    = useState(false);
+  const [searching,  setSearching]  = useState(false); // debounce indicator
+  const [error,      setError]      = useState('');
+  const debounceRef  = useRef<ReturnType<typeof setTimeout>>();
 
   const load = useCallback(async (targetPage = 1) => {
     setLoading(true);
@@ -189,17 +192,27 @@ export function ActivityLogPage() {
       setError(e.message || 'Failed to load activity log');
     } finally {
       setLoading(false);
+      setSearching(false);
     }
   }, [filterAction, filterEmployee, filterAssetId, filterFrom, filterTo, filterQ]);
 
-  useEffect(() => { load(1); }, []);  // load on mount
-
-  function handleSearch() { load(1); }
+  // Single effect: load immediately on first mount, debounce on subsequent filter changes
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      load(1);
+      return;
+    }
+    setSearching(true);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => load(1), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [filterQ, filterAction, filterEmployee, filterAssetId, filterFrom, filterTo]);
 
   function handleClear() {
     setFilterQ(''); setFilterAction(''); setFilterEmployee('');
     setFilterAssetId(''); setFilterFrom(''); setFilterTo('');
-    setTimeout(() => load(1), 0);
   }
 
   function handleExport() {
@@ -219,7 +232,7 @@ export function ActivityLogPage() {
     height: 36, fontSize: 13, padding: '0 10px',
     border: '1px solid var(--border)', borderRadius: 7,
     background: 'var(--surface)', color: 'var(--text-1)',
-    outline: 'none', flex: 1, minWidth: 0,
+    outline: 'none', width: '100%', minWidth: 0, boxSizing: 'border-box',
   };
 
   const labelStyle: React.CSSProperties = {
@@ -240,95 +253,74 @@ export function ActivityLogPage() {
             Full audit trail — assignments, returns, creates, updates, and field-level changes.
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          className="md-btn"
-          style={{ gap: 6, fontSize: 13, padding: '8px 16px', flexShrink: 0 }}
-        >
-          <span className="icon icon-sm">download</span>
-          Export CSV
+        <button onClick={handleExport} className="md-btn" style={{ gap: 6, fontSize: 13, padding: '8px 16px', flexShrink: 0 }}>
+          <span className="icon icon-sm">download</span>Export CSV
         </button>
       </div>
 
       {/* Filter card */}
       <div className="md-card" style={{ padding: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-          <span className="icon icon-sm" style={{ color: 'var(--primary)' }}>filter_list</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', fontFamily: "'Google Sans', sans-serif" }}>Filters</span>
-          {hasFilters && (
-            <button
-              onClick={handleClear}
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 12, color: 'var(--text-3)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-            >
-              <span className="icon icon-sm">close</span>Clear all
-            </button>
-          )}
-        </div>
 
-        {/* Row 1 */}
+        {/* Row 1: main search + action */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div style={{ flex: 2, minWidth: 160 }}>
+          {/* Main search — searches everything */}
+          <div style={{ flex: '3 1 240px', position: 'relative' }}>
             <label style={labelStyle}>Search</label>
-            <input
-              style={inputStyle}
-              placeholder="Asset ID, employee, notes, type…"
-              value={filterQ}
-              onChange={e => setFilterQ(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
+            <div style={{ position: 'relative' }}>
+              <span className="icon icon-sm" style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)', pointerEvents: 'none' }}>search</span>
+              <input
+                style={{ ...inputStyle, paddingLeft: 30 }}
+                placeholder="Asset ID, brand, model, name, email, notes…"
+                value={filterQ}
+                onChange={e => setFilterQ(e.target.value)}
+              />
+              {searching && (
+                <div style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, border: '2px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+              )}
+            </div>
           </div>
-          <div style={{ flex: 1, minWidth: 120 }}>
+          {/* Action */}
+          <div style={{ flex: '1 1 130px' }}>
             <label style={labelStyle}>Action</label>
-            <select
-              style={{ ...inputStyle, cursor: 'pointer' }}
-              value={filterAction}
-              onChange={e => setFilterAction(e.target.value)}
-            >
-              {ACTION_OPTIONS.map(a => (
-                <option key={a} value={a}>{a || 'All actions'}</option>
-              ))}
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={filterAction} onChange={e => setFilterAction(e.target.value)}>
+              {ACTION_OPTIONS.map(a => <option key={a} value={a}>{a || 'All actions'}</option>)}
             </select>
           </div>
-          <div style={{ flex: 2, minWidth: 160 }}>
-            <label style={labelStyle}>Employee (email / name)</label>
-            <input
-              style={inputStyle}
-              placeholder="e.g. john@company.com"
-              value={filterEmployee}
-              onChange={e => setFilterEmployee(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          <div style={{ flex: 1, minWidth: 120 }}>
-            <label style={labelStyle}>Asset ID</label>
-            <input
-              style={inputStyle}
-              placeholder="e.g. LT-2312-0001"
-              value={filterAssetId}
-              onChange={e => setFilterAssetId(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
         </div>
 
-        {/* Row 2 */}
+        {/* Row 2: targeted filters */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ flex: '2 1 170px' }}>
+            <label style={labelStyle}>Employee — name, email, or ID</label>
+            <input
+              style={inputStyle}
+              placeholder="e.g. John, john@co.com, EMP-001"
+              value={filterEmployee}
+              onChange={e => setFilterEmployee(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <label style={labelStyle}>Asset ID — with or without hyphens</label>
+            <input
+              style={inputStyle}
+              placeholder="e.g. LT-2312-0001 or LT23120001"
+              value={filterAssetId}
+              onChange={e => setFilterAssetId(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: '1 1 130px' }}>
             <label style={labelStyle}>From date</label>
             <input type="date" style={inputStyle} value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
           </div>
-          <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ flex: '1 1 130px' }}>
             <label style={labelStyle}>To date</label>
             <input type="date" style={inputStyle} value={filterTo} onChange={e => setFilterTo(e.target.value)} />
           </div>
-          <button
-            onClick={handleSearch}
-            className="md-btn md-btn-primary"
-            style={{ height: 36, padding: '0 20px', fontSize: 13, flexShrink: 0 }}
-          >
-            <span className="icon icon-sm">search</span>
-            Search
-          </button>
+          {hasFilters && (
+            <button onClick={handleClear} className="md-btn md-btn-outlined" style={{ height: 36, padding: '0 14px', fontSize: 12, flexShrink: 0, alignSelf: 'flex-end' }}>
+              <span className="icon icon-sm">filter_alt_off</span> Clear
+            </button>
+          )}
         </div>
       </div>
 

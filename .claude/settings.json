@@ -33,7 +33,9 @@
       "WebFetch(domain:api.github.com)",
       "Bash(powershell -ExecutionPolicy Bypass -File:*)",
       "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\electron\\\\assets\")",
-      "PowerShell(Copy-Item \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\backend\\\\static\\\\assets\\\\gravity_asset_v1.svg\" \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\electron\\\\assets\\\\gravity_logo.svg\" -Force)"
+      "PowerShell(Copy-Item \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\backend\\\\static\\\\assets\\\\gravity_asset_v1.svg\" \"c:\\\\Users\\\\devmu\\\\OneDrive\\\\Desktop\\\\Asset report generator\\\\asset-app\\\\electron\\\\assets\\\\gravity_logo.svg\" -Force)",
+      "PowerShell(node --version 2>&1)",
+      "PowerShell(npm list -g png-to-ico 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\devmu\\OneDrive\\Desktop\\Asset report generator\\asset-app\\frontend\\src\\pages",

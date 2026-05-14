@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { Asset } from '../lib/types';
+import type { Asset, ActivityLogItem } from '../lib/types';
 import { StatusBadge } from '../components/StatusBadge';
 
 const TYPE_ICON: Record<string, string> = {
@@ -82,6 +82,76 @@ function SectionHeader({ icon, title, color = 'var(--primary)' }: { icon: string
         <span className="icon" style={{ color, fontSize: 18 }}>{icon}</span>
       </div>
       <span style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--text-1)' }}>{title}</span>
+    </div>
+  );
+}
+
+const ACTION_COLORS: Record<string, { bg: string; color: string }> = {
+  assign:       { bg: 'rgba(76,175,80,.12)',  color: '#2e7d32' },
+  return:       { bg: 'rgba(255,152,0,.12)',  color: '#b06000' },
+  create:       { bg: 'var(--primary-bg)',    color: 'var(--primary)' },
+  update:       { bg: 'rgba(156,39,176,.12)', color: '#7b1fa2' },
+  swap:         { bg: 'rgba(33,150,243,.12)', color: '#1565c0' },
+  'bulk return':{ bg: 'rgba(255,152,0,.12)',  color: '#b06000' },
+};
+function miniActionBadge(action: string) {
+  const s = ACTION_COLORS[action.toLowerCase()] ?? { bg: 'var(--surface-2)', color: 'var(--text-2)' };
+  return (
+    <span style={{ padding: '1px 8px', borderRadius: 8, fontSize: 10, fontWeight: 600, background: s.bg, color: s.color, whiteSpace: 'nowrap' }}>
+      {action}
+    </span>
+  );
+}
+function fmtShort(iso: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function AssetRecentActivity({ assetId }: { assetId: string }) {
+  const nav = useNavigate();
+  const [items, setItems] = useState<ActivityLogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getActivity({ asset_id: assetId, page_size: 5 })
+      .then(d => setItems(d.items))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [assetId]);
+
+  if (loading) return null;
+  if (!items.length) return null;
+
+  return (
+    <div className="md-card" style={{ padding: 22 }}>
+      <SectionHeader icon="history" title="Recent Activity" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {items.map((item, i) => (
+          <div key={item.id} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            padding: '8px 0',
+            borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none',
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {miniActionBadge(item.action)}
+                <span style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{item.employee_name}</span>
+                {item.old_status && item.new_status && (
+                  <span style={{ fontSize: 10, color: 'var(--text-3)' }}>{item.old_status} → {item.new_status}</span>
+                )}
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{fmtShort(item.timestamp)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => nav(`/activity?asset_id=${encodeURIComponent(assetId)}`)}
+        style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--primary)', fontSize: 12, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        View all activity <span className="icon icon-sm">arrow_forward</span>
+      </button>
     </div>
   );
 }
@@ -286,6 +356,9 @@ export function AssetDetailPage() {
           <InfoRow icon="receipt"        label="Invoice Ref"    value={asset.invoice_ref} mono />
           <InfoRow icon="shield"         label="Warranty End"   value={formatDate(asset.warranty_end)} />
         </div>
+
+        {/* Recent Activity */}
+        <AssetRecentActivity assetId={asset.asset_id} />
 
         {/* Notes & Security — only show if there's data */}
         {(asset.notes || asset.pin_password) && (
