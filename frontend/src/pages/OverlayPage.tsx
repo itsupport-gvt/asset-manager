@@ -1,15 +1,16 @@
 /**
  * OverlayPage — Print Overlay Workflow
  *
- * Features ported from main-v2.py:
+ * Features:
  *  1. Employee + doc type selection
- *  2. Asset list (DB assets) + custom item entry
+ *  2. Asset list (DB assets) + custom item entry + optional returns section
  *  3. Notes per asset row
  *  4. Row position assignment (page + row for each asset)
  *  5. PDF calibration (upload existing form PDF → auto-detect positions)
  *  6. Calibration grid download
  *  7. Generate overlay PDF (download)
  *  8. Print log (mark printed, view history, clear)
+ *  9. Return assets in DB prompt when returns are included
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -27,12 +28,18 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-// ── Step components ───────────────────────────────────────────────────────────
+function todayReturnNote(): string {
+  const d = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `Returned ${String(d.getDate()).padStart(2,'0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type DocType = 'Handover' | 'Return';
 
 interface AssetRow {
-  id: string;           // used as key
+  id: string;
   asset_id: string;
   asset_type: string;
   brand: string;
@@ -40,19 +47,19 @@ interface AssetRow {
   serial_number: string;
   notes: string;
   is_custom: boolean;
+  is_return?: boolean;
 }
 
 interface RowAssignment {
   asset_row: AssetRow;
   page: number;
   target_row: number;
-  note: string;         // per-row note override for the overlay
+  note: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 
 export function OverlayPage() {
-  // ── Step state ─────────────────────────────────────────────────────────────
   type Step = 'select' | 'assets' | 'positions' | 'calibrate' | 'review' | 'log';
   const [step, setStep] = useState<Step>('select');
 
@@ -64,7 +71,7 @@ export function OverlayPage() {
   const [empDropOpen, setEmpDropOpen] = useState(false);
   const empBlurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Step 2: assets ─────────────────────────────────────────────────────────
+  // ── Step 2: handover assets ────────────────────────────────────────────────
   const [dbAssets, setDbAssets] = useState<AssetRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [customItems, setCustomItems] = useState<AssetRow[]>([]);
@@ -72,6 +79,11 @@ export function OverlayPage() {
   const [customForm, setCustomForm] = useState({ asset_id: '', asset_type: '', brand: '', model: '', serial_number: '' });
   const [printLog, setPrintLog] = useState<PrintLogEntry | null>(null);
   const [loadingAssets, setLoadingAssets] = useState(false);
+
+  // ── Step 2: returns section ────────────────────────────────────────────────
+  const [showReturns, setShowReturns] = useState(false);
+  const [returnSelectedIds, setReturnSelectedIds] = useState<Set<string>>(new Set());
+  const [returnNotes, setReturnNotes] = useState<Record<string, string>>({});
 
   // ── Step 3: row positions ──────────────────────────────────────────────────
   const [assignments, setAssignments] = useState<RowAssignment[]>([]);
@@ -85,6 +97,11 @@ export function OverlayPage() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState('');
 
+  // ── Return confirmation dialog ─────────────────────────────────────────────
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returningToDb, setReturningToDb] = useState(false);
+  const [returnDbError, setReturnDbError] = useState('');
+
   // ── Print log ──────────────────────────────────────────────────────────────
   const [logLoading, setLogLoading] = useState(false);
   const [markMsg, setMarkMsg] = useState('');
@@ -97,6 +114,9 @@ export function OverlayPage() {
   // ── Load assets + print log when employee + docType selected ──────────────
   const loadAssetsForEmployee = useCallback(async (emp: Employee, dt: DocType) => {
     setLoadingAssets(true);
+    setReturnSelectedIds(new Set());
+    setReturnNotes({});
+    setShowReturns(false);
     try {
       const preview = await api.reportPreview(emp.email);
       const rows: AssetRow[] = preview.rows.map((r, i) => ({
@@ -111,7 +131,6 @@ export function OverlayPage() {
       }));
       setDbAssets(rows);
       setSelectedIds(new Set(rows.map(r => r.id)));
-
       const log = await api.getPrintLog(emp.employee_id || emp.email, dt);
       setPrintLog(log);
     } catch {
@@ -128,21 +147,31 @@ export function OverlayPage() {
       ).slice(0, 8)
     : [];
 
-  // ── All rows (db + custom) in selected order ───────────────────────────────
+  // ── All handover rows (db + custom) ───────────────────────────────────────
   const allSelectedRows = [
     ...dbAssets.filter(r => selectedIds.has(r.id)),
     ...customItems,
   ];
 
+  // ── Return rows ────────────────────────────────────────────────────────────
+  const returnRows: AssetRow[] = dbAssets
+    .filter(r => returnSelectedIds.has(r.id))
+    .map(r => ({ ...r, id: `ret-${r.id}`, is_return: true }));
+
+  const totalRows = allSelectedRows.length + returnRows.length;
+
   // ── Init assignments when entering positions step ─────────────────────────
   function initAssignments() {
-    const asgn: RowAssignment[] = allSelectedRows.map((row, i) => {
+    const combined = [...allSelectedRows, ...returnRows];
+    const asgn: RowAssignment[] = combined.map((row, i) => {
       const existing = assignments.find(a => a.asset_row.id === row.id);
       if (existing) return existing;
-      // Auto-assign: rows 1-7 on page 1, then 1+ on page 2
       const page = i < 7 ? 1 : 2;
       const target_row = i < 7 ? i + 1 : i - 6;
-      return { asset_row: row, page, target_row, note: row.notes || '' };
+      const note = row.is_return
+        ? (returnNotes[row.asset_id] || todayReturnNote())
+        : (row.notes || '');
+      return { asset_row: row, page, target_row, note };
     });
     setAssignments(asgn);
   }
@@ -160,7 +189,7 @@ export function OverlayPage() {
         a.asset_row.model,
         a.asset_row.serial_number,
         a.note,
-        '',  // Signature blank
+        '',
       ],
     }));
   }
@@ -178,6 +207,36 @@ export function OverlayPage() {
       setGenError(e.message || 'Generation failed');
     }
     setGenerating(false);
+  }
+
+  // ── Generate button click — open dialog if returns are included ────────────
+  function handleGenerateClick() {
+    const hasReturns = assignments.some(a => a.asset_row.is_return);
+    if (hasReturns) {
+      setReturnDbError('');
+      setReturnDialogOpen(true);
+    } else {
+      handleGenerate();
+    }
+  }
+
+  // ── Return in DB then generate ─────────────────────────────────────────────
+  async function handleReturnInDbAndGenerate() {
+    setReturningToDb(true);
+    setReturnDbError('');
+    const retItems = assignments.filter(a => a.asset_row.is_return);
+    for (const a of retItems) {
+      try {
+        await api.returnAsset({ asset_id: a.asset_row.asset_id, notes: a.note });
+      } catch (e: any) {
+        setReturnDbError(`Failed to return ${a.asset_row.asset_id}: ${e.message}`);
+        setReturningToDb(false);
+        return;
+      }
+    }
+    setReturnDialogOpen(false);
+    setReturningToDb(false);
+    await handleGenerate();
   }
 
   // ── Mark printed ───────────────────────────────────────────────────────────
@@ -259,6 +318,12 @@ export function OverlayPage() {
 
   const printedSet = new Set(printLog?.printed_ids ?? []);
 
+  const returnBadge = (
+    <span style={{ fontSize: 10, background: '#fce8e6', color: '#c5221f', padding: '2px 6px', borderRadius: 8, fontWeight: 600, marginLeft: 6, letterSpacing: 0.3 }}>
+      RETURN
+    </span>
+  );
+
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
       {/* Header */}
@@ -279,7 +344,7 @@ export function OverlayPage() {
             style={stepBtnStyle(step === s.key)}
             onClick={() => {
               if (s.key === 'assets' && !selectedEmp) return;
-              if (s.key === 'positions' && allSelectedRows.length === 0) return;
+              if (s.key === 'positions' && totalRows === 0) return;
               setStep(s.key);
               if (s.key === 'positions') initAssignments();
             }}
@@ -297,7 +362,6 @@ export function OverlayPage() {
             Select Employee &amp; Document Type
           </h2>
 
-          {/* Doc type */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
             {(['Handover', 'Return'] as DocType[]).map(dt => (
               <button
@@ -314,7 +378,6 @@ export function OverlayPage() {
             ))}
           </div>
 
-          {/* Employee search */}
           <label style={{ fontSize: 13, color: 'var(--text-2)', display: 'block', marginBottom: 6 }}>Employee</label>
           <div style={{ position: 'relative', maxWidth: 420 }}>
             <input
@@ -332,11 +395,7 @@ export function OverlayPage() {
                   <button
                     key={e.email}
                     onMouseDown={() => { if (empBlurTimer.current) clearTimeout(empBlurTimer.current); }}
-                    onClick={() => {
-                      setSelectedEmp(e);
-                      setEmpSearch('');
-                      setEmpDropOpen(false);
-                    }}
+                    onClick={() => { setSelectedEmp(e); setEmpSearch(''); setEmpDropOpen(false); }}
                     style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer', fontSize: 13 }}
                   >
                     <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{e.employee_display}</span>
@@ -398,21 +457,15 @@ export function OverlayPage() {
             <>
               {/* Quick-select buttons */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                <button className="md-btn" style={{ fontSize: 12 }} onClick={() => setSelectedIds(new Set(dbAssets.map(r => r.id)))}>
-                  Select all
-                </button>
+                <button className="md-btn" style={{ fontSize: 12 }} onClick={() => setSelectedIds(new Set(dbAssets.map(r => r.id)))}>Select all</button>
                 <button className="md-btn" style={{ fontSize: 12 }} onClick={() => {
                   const unprinted = new Set(dbAssets.filter(r => !printedSet.has(r.asset_id)).map(r => r.id));
                   setSelectedIds(unprinted);
-                }}>
-                  Select new only
-                </button>
-                <button className="md-btn" style={{ fontSize: 12 }} onClick={() => setSelectedIds(new Set())}>
-                  Deselect all
-                </button>
+                }}>Select new only</button>
+                <button className="md-btn" style={{ fontSize: 12 }} onClick={() => setSelectedIds(new Set())}>Deselect all</button>
               </div>
 
-              {/* Asset list */}
+              {/* Handover asset list */}
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -460,7 +513,7 @@ export function OverlayPage() {
                         <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                           <button
                             onClick={(e) => { e.stopPropagation(); setCustomItems(ci => ci.filter((_, j) => j !== i)); }}
-                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--error)', padding: 0, fontSize: 16 }}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--error)', padding: 0 }}
                             title="Remove custom item"
                           >
                             <span className="icon" style={{ fontSize: 18 }}>remove_circle_outline</span>
@@ -506,18 +559,99 @@ export function OverlayPage() {
                         style={{ fontSize: 12 }}
                         onClick={() => {
                           if (!customForm.asset_id && !customForm.asset_type) return;
-                          const newItem: AssetRow = {
-                            id: `custom-${Date.now()}`,
-                            ...customForm,
-                            notes: '',
-                            is_custom: true,
-                          };
-                          setCustomItems(ci => [...ci, newItem]);
+                          setCustomItems(ci => [...ci, { id: `custom-${Date.now()}`, ...customForm, notes: '', is_custom: true }]);
                           setCustomForm({ asset_id: '', asset_type: '', brand: '', model: '', serial_number: '' });
                           setShowAddCustom(false);
                         }}
                       >Add</button>
                       <button className="md-btn" style={{ fontSize: 12 }} onClick={() => setShowAddCustom(false)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Returns section ────────────────────────────────────────── */}
+              <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                <button
+                  className="md-btn"
+                  style={{
+                    fontSize: 13,
+                    background: showReturns ? '#fce8e6' : 'var(--surface-2)',
+                    color: showReturns ? '#c5221f' : 'var(--text-2)',
+                    border: `1px solid ${showReturns ? '#f4b8b4' : 'var(--border)'}`,
+                  }}
+                  onClick={() => setShowReturns(v => !v)}
+                >
+                  <span className="icon icon-sm">undo</span>
+                  {showReturns ? 'Hide returns section' : 'Also include returns on this form (optional)'}
+                  {returnSelectedIds.size > 0 && (
+                    <span style={{ marginLeft: 8, fontSize: 11, background: '#c5221f', color: '#fff', borderRadius: 10, padding: '1px 7px' }}>
+                      {returnSelectedIds.size}
+                    </span>
+                  )}
+                </button>
+
+                {showReturns && (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 10px' }}>
+                      Select assets being returned by this employee. They will be added to the next available rows on the same form with a "Returned" note.
+                    </p>
+                    <div style={{ border: '1px solid #f4b8b4', borderRadius: 10, overflow: 'hidden', background: '#fff8f8' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#fce8e6' }}>
+                            <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}></th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Asset ID</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Type</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Brand / Model</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Note on form</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dbAssets.length === 0 && (
+                            <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--text-3)' }}>No assigned assets</td></tr>
+                          )}
+                          {dbAssets.map(row => {
+                            const checked = returnSelectedIds.has(row.id);
+                            const note = returnNotes[row.asset_id] ?? todayReturnNote();
+                            return (
+                              <tr
+                                key={`ret-${row.id}`}
+                                style={{ borderTop: '1px solid #f4b8b4', cursor: 'pointer', background: checked ? '#fce8e6' : 'transparent' }}
+                                onClick={() => {
+                                  const next = new Set(returnSelectedIds);
+                                  if (next.has(row.id)) {
+                                    next.delete(row.id);
+                                  } else {
+                                    next.add(row.id);
+                                    if (!returnNotes[row.asset_id]) {
+                                      setReturnNotes(n => ({ ...n, [row.asset_id]: todayReturnNote() }));
+                                    }
+                                  }
+                                  setReturnSelectedIds(next);
+                                }}
+                              >
+                                <td style={{ textAlign: 'center', padding: '7px 10px' }}>
+                                  <input type="checkbox" checked={checked} readOnly style={{ cursor: 'pointer', accentColor: '#c5221f' }} />
+                                </td>
+                                <td style={{ padding: '7px 10px', fontWeight: 500, color: 'var(--text-1)', fontFamily: 'monospace', fontSize: 12 }}>{row.asset_id || '—'}</td>
+                                <td style={{ padding: '7px 10px', color: 'var(--text-2)', fontSize: 12 }}>{row.asset_type}</td>
+                                <td style={{ padding: '7px 10px', color: 'var(--text-2)', fontSize: 12 }}>{row.brand} {row.model}</td>
+                                <td style={{ padding: '7px 10px' }} onClick={e => e.stopPropagation()}>
+                                  <input
+                                    className="md-input"
+                                    value={checked ? note : ''}
+                                    disabled={!checked}
+                                    onChange={e => setReturnNotes(n => ({ ...n, [row.asset_id]: e.target.value }))}
+                                    placeholder={todayReturnNote()}
+                                    style={{ fontSize: 12, width: '100%', opacity: checked ? 1 : 0.4 }}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -531,10 +665,10 @@ export function OverlayPage() {
             </button>
             <button
               className="md-btn md-btn-primary"
-              disabled={allSelectedRows.length === 0}
+              disabled={totalRows === 0}
               onClick={() => { initAssignments(); setStep('positions'); }}
             >
-              Next: Assign Rows ({allSelectedRows.length})
+              Next: Assign Rows ({totalRows})
               <span className="icon icon-sm">arrow_forward</span>
             </button>
           </div>
@@ -564,9 +698,15 @@ export function OverlayPage() {
               </thead>
               <tbody>
                 {assignments.map((a, i) => (
-                  <tr key={a.asset_row.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <tr
+                    key={a.asset_row.id}
+                    style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? '#fff8f8' : 'transparent' }}
+                  >
                     <td style={{ padding: '8px 10px' }}>
-                      <div style={{ fontWeight: 500, color: 'var(--text-1)', fontSize: 12, fontFamily: 'monospace' }}>{a.asset_row.asset_id || <em style={{ color: 'var(--primary)', fontStyle: 'normal' }}>custom</em>}</div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-1)', fontSize: 12, fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
+                        {a.asset_row.asset_id || <em style={{ color: 'var(--primary)', fontStyle: 'normal' }}>custom</em>}
+                        {a.asset_row.is_return && returnBadge}
+                      </div>
                       <div style={{ color: 'var(--text-2)', fontSize: 12 }}>{a.asset_row.asset_type} · {a.asset_row.brand} {a.asset_row.model}</div>
                     </td>
                     <td style={{ padding: '8px 6px', textAlign: 'center' }}>
@@ -595,7 +735,7 @@ export function OverlayPage() {
                         value={a.note}
                         onChange={e => setAssignments(prev => prev.map((x, j) => j === i ? { ...x, note: e.target.value } : x))}
                         placeholder="Optional note for this row…"
-                        style={{ width: '100%', fontSize: 12 }}
+                        style={{ width: '100%', fontSize: 12, borderColor: a.asset_row.is_return ? '#f4b8b4' : undefined }}
                       />
                     </td>
                   </tr>
@@ -628,25 +768,12 @@ export function OverlayPage() {
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <label
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-                background: 'var(--primary-bg)', color: 'var(--primary)', cursor: 'pointer',
-                border: '1px solid var(--primary)',
-              }}
-            >
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, background: 'var(--primary-bg)', color: 'var(--primary)', cursor: 'pointer', border: '1px solid var(--primary)' }}>
               <span className="icon icon-sm">upload_file</span>
               {calibLoading ? 'Reading PDF…' : 'Upload form PDF to calibrate'}
               <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleCalibUpload} disabled={calibLoading} />
             </label>
-
-            <button
-              className="md-btn"
-              onClick={handleCalibGridDownload}
-              style={{ fontSize: 13 }}
-              title="Download a ruler grid PDF for manual measurement"
-            >
+            <button className="md-btn" onClick={handleCalibGridDownload} style={{ fontSize: 13 }} title="Download a ruler grid PDF for manual measurement">
               <span className="icon icon-sm">grid_on</span>
               Download calibration grid
             </button>
@@ -669,10 +796,7 @@ export function OverlayPage() {
                   {p.num_data_rows} data rows, {p.col_x0.length} cols
                 </div>
               ))}
-              <button
-                style={{ marginTop: 8, fontSize: 12, color: 'var(--error)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                onClick={() => setCalibration(null)}
-              >
+              <button style={{ marginTop: 8, fontSize: 12, color: 'var(--error)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => setCalibration(null)}>
                 Remove calibration (use defaults)
               </button>
             </div>
@@ -701,7 +825,6 @@ export function OverlayPage() {
             Review &amp; Generate Overlay
           </h2>
 
-          {/* Summary table */}
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -716,13 +839,18 @@ export function OverlayPage() {
               </thead>
               <tbody>
                 {assignments.map(a => (
-                  <tr key={a.asset_row.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 600, color: 'var(--primary)' }}>{a.page}·{a.target_row}</td>
-                    <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-1)' }}>{a.asset_row.asset_id || '—'}</td>
+                  <tr key={a.asset_row.id} style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? '#fff8f8' : 'transparent' }}>
+                    <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 600, color: a.asset_row.is_return ? '#c5221f' : 'var(--primary)' }}>{a.page}·{a.target_row}</td>
+                    <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-1)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {a.asset_row.asset_id || '—'}
+                        {a.asset_row.is_return && returnBadge}
+                      </span>
+                    </td>
                     <td style={{ padding: '7px 10px', color: 'var(--text-2)' }}>{a.asset_row.asset_type}</td>
                     <td style={{ padding: '7px 10px', color: 'var(--text-2)' }}>{a.asset_row.brand} {a.asset_row.model}</td>
                     <td style={{ padding: '7px 10px', color: 'var(--text-3)', fontSize: 12 }}>{a.asset_row.serial_number}</td>
-                    <td style={{ padding: '7px 10px', color: 'var(--text-2)', fontSize: 12, fontStyle: a.note ? 'normal' : 'italic' }}>
+                    <td style={{ padding: '7px 10px', color: a.asset_row.is_return ? '#c5221f' : 'var(--text-2)', fontSize: 12, fontStyle: a.note ? 'normal' : 'italic' }}>
                       {a.note || '—'}
                     </td>
                   </tr>
@@ -731,7 +859,13 @@ export function OverlayPage() {
             </table>
           </div>
 
-          {/* Calibration status */}
+          {assignments.some(a => a.asset_row.is_return) && (
+            <div style={{ padding: '10px 14px', background: '#fce8e6', border: '1px solid #f4b8b4', borderRadius: 8, fontSize: 13, color: '#c5221f', marginBottom: 12 }}>
+              <span className="icon icon-sm">undo</span>
+              {' '}{assignments.filter(a => a.asset_row.is_return).length} return row(s) included — you'll be asked whether to update the database when generating.
+            </div>
+          )}
+
           <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16 }}>
             <span className="icon icon-sm" style={{ verticalAlign: 'middle', marginRight: 4 }}>
               {calibration ? 'check_circle' : 'info'}
@@ -757,7 +891,7 @@ export function OverlayPage() {
             <button
               className="md-btn md-btn-primary"
               disabled={generating}
-              onClick={handleGenerate}
+              onClick={handleGenerateClick}
               style={{ minWidth: 180 }}
             >
               <span className="icon icon-sm">{generating ? 'sync' : 'download'}</span>
@@ -766,7 +900,7 @@ export function OverlayPage() {
             {!generating && (
               <button
                 className="md-btn"
-                onClick={() => { handleGenerate(); setTimeout(() => handleMarkPrinted(), 2000); }}
+                onClick={() => { handleGenerateClick(); setTimeout(() => handleMarkPrinted(), 2000); }}
                 style={{ background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid #ceead6' }}
                 title="Generate overlay AND mark assets as printed"
               >
@@ -813,7 +947,6 @@ export function OverlayPage() {
                       ))}
                     </div>
                   </div>
-
                   {printLog.history.length > 0 && (
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-1)', marginBottom: 6 }}>Print sessions:</div>
@@ -838,30 +971,79 @@ export function OverlayPage() {
                   <span className="icon icon-sm">check_circle</span>
                   Mark current selection as printed
                 </button>
-                <button
-                  className="md-btn"
-                  onClick={handleClearLog}
-                  style={{ color: 'var(--error)', border: '1px solid var(--border)' }}
-                >
+                <button className="md-btn" onClick={handleClearLog} style={{ color: 'var(--error)', border: '1px solid var(--border)' }}>
                   <span className="icon icon-sm">delete</span>
                   Clear log
                 </button>
-                <button
-                  className="md-btn"
-                  onClick={async () => {
-                    if (!selectedEmp) return;
-                    setLogLoading(true);
-                    const log = await api.getPrintLog(selectedEmp.employee_id || selectedEmp.email, docType);
-                    setPrintLog(log);
-                    setLogLoading(false);
-                  }}
-                >
+                <button className="md-btn" onClick={async () => {
+                  if (!selectedEmp) return;
+                  setLogLoading(true);
+                  const log = await api.getPrintLog(selectedEmp.employee_id || selectedEmp.email, docType);
+                  setPrintLog(log);
+                  setLogLoading(false);
+                }}>
                   <span className="icon icon-sm">refresh</span>
                   Refresh
                 </button>
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── RETURN CONFIRMATION DIALOG ── */}
+      {returnDialogOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 28, maxWidth: 480, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 600, color: 'var(--text-1)' }}>
+              Return assets in system?
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px' }}>
+              The following assets are marked as returned on this form. Do you also want to update their status to <strong>In Stock</strong> in the database?
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+              {assignments.filter(a => a.asset_row.is_return).map(a => (
+                <div key={a.asset_row.id} style={{ fontSize: 12, background: '#fce8e6', color: '#c5221f', padding: '3px 10px', borderRadius: 10 }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.asset_row.asset_id}</span>
+                  <span style={{ marginLeft: 6, color: '#a0463a', fontSize: 11 }}>{a.note}</span>
+                </div>
+              ))}
+            </div>
+
+            {returnDbError && (
+              <div style={{ padding: '8px 12px', background: '#fce8e6', color: '#c5221f', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
+                <span className="icon icon-sm">error</span> {returnDbError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="md-btn md-btn-primary"
+                disabled={returningToDb}
+                onClick={handleReturnInDbAndGenerate}
+                style={{ background: '#c5221f', borderColor: '#c5221f' }}
+              >
+                <span className="icon icon-sm">{returningToDb ? 'sync' : 'undo'}</span>
+                {returningToDb ? 'Returning…' : 'Return in DB + Download'}
+              </button>
+              <button
+                className="md-btn"
+                disabled={returningToDb}
+                onClick={() => { setReturnDialogOpen(false); handleGenerate(); }}
+              >
+                <span className="icon icon-sm">download</span>
+                Print only
+              </button>
+              <button
+                className="md-btn"
+                disabled={returningToDb}
+                onClick={() => setReturnDialogOpen(false)}
+                style={{ marginLeft: 'auto' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
