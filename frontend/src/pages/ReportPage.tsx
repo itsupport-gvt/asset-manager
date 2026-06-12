@@ -1,6 +1,21 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../lib/api';
 import type { Employee, ReportRow, ReportPreview } from '../lib/types';
+
+function todayReturnNote(): string {
+  const d = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `Returned ${String(d.getDate()).padStart(2,'0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+interface ReturnItem {
+  asset_id: string;
+  asset_type: string;
+  brand: string;
+  model: string;
+  serial_number: string;
+  note: string;
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +116,20 @@ export function ReportPage() {
   const [generatingDocx, setGeneratingDocx] = useState(false);
   const [genError, setGenError] = useState('');
 
+  // ── Returns section ────────────────────────────────────────────────────────
+  const [showReturns,    setShowReturns]    = useState(false);
+  const [returnItems,    setReturnItems]    = useState<ReturnItem[]>([]);
+  const [returnSearch,   setReturnSearch]   = useState('');
+  const [returnSearching, setReturnSearching] = useState(false);
+  const [returnSearchErr, setReturnSearchErr] = useState('');
+  const returnInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Return confirmation dialog ─────────────────────────────────────────────
+  const [returnDialogOpen,  setReturnDialogOpen]  = useState(false);
+  const [returningToDb,     setReturningToDb]     = useState(false);
+  const [returnDbError,     setReturnDbError]     = useState('');
+  const [pendingGenDocx,    setPendingGenDocx]    = useState(false);
+
   useEffect(() => {
     api.getEmployees().then(emps => setEmployees(emps.filter(e => !e.is_room)));
   }, []);
@@ -112,6 +141,9 @@ export function ReportPage() {
     setPreviewError('');
     setExcluded(new Set());
     setRowNotes({});
+    setReturnItems([]);
+    setShowReturns(false);
+    setReturnSearch('');
     api.reportPreview(selectedEmp.email)
       .then(p => setPreview(p))
       .catch(e => setPreviewError(e.message))
@@ -145,24 +177,30 @@ export function ReportPage() {
 
   const includedCount = (preview?.rows ?? []).filter(r => isChecked(r)).length;
 
+  function buildBody() {
+    const excludedIds = (preview?.rows ?? [])
+      .filter(r => !isChecked(r)).map(r => r.asset_id).filter(Boolean);
+    return {
+      employee_email: selectedEmp!.email,
+      doc_type: docType,
+      excluded_ids: excludedIds,
+      row_notes: rowNotes,
+      extra_rows: returnItems.map(r => ({
+        asset_id: r.asset_id, asset_type: r.asset_type,
+        brand: r.brand, model: r.model,
+        serial_number: r.serial_number, notes: r.note,
+      })),
+    };
+  }
+
   async function generate() {
     if (!selectedEmp || !preview) return;
     setGenerating(true);
     setGenError('');
     try {
-      const excludedIds = (preview.rows)
-        .filter(r => !isChecked(r))
-        .map(r => r.asset_id)
-        .filter(Boolean);
-      const blob = await api.generateReport({
-        employee_email: selectedEmp.email,
-        doc_type: docType,
-        excluded_ids: excludedIds,
-        row_notes: rowNotes,
-      });
+      const blob = await api.generateReport(buildBody());
       const name = selectedEmp.full_name.replace(/\s+/g, '_');
-      const empId = selectedEmp.employee_id || '';
-      downloadBlob(blob, `${docType}_${name}_${empId}.pdf`);
+      downloadBlob(blob, `${docType}_${name}_${selectedEmp.employee_id || ''}.pdf`);
     } catch (e: any) {
       setGenError(e.message || 'Generation failed');
     } finally {
@@ -175,23 +213,68 @@ export function ReportPage() {
     setGeneratingDocx(true);
     setGenError('');
     try {
-      const excludedIds = (preview.rows)
-        .filter(r => !isChecked(r))
-        .map(r => r.asset_id)
-        .filter(Boolean);
-      const blob = await api.generateReportDocx({
-        employee_email: selectedEmp.email,
-        doc_type: docType,
-        excluded_ids: excludedIds,
-        row_notes: rowNotes,
-      });
+      const blob = await api.generateReportDocx(buildBody());
       const name = selectedEmp.full_name.replace(/\s+/g, '_');
-      const empId = selectedEmp.employee_id || '';
-      downloadBlob(blob, `${docType}_${name}_${empId}.docx`);
+      downloadBlob(blob, `${docType}_${name}_${selectedEmp.employee_id || ''}.docx`);
     } catch (e: any) {
       setGenError(e.message || 'Word generation failed');
     } finally {
       setGeneratingDocx(false);
+    }
+  }
+
+  function handleGenerateClick(isDocx = false) {
+    if (returnItems.length > 0) {
+      setReturnDbError('');
+      setPendingGenDocx(isDocx);
+      setReturnDialogOpen(true);
+    } else {
+      isDocx ? generateDocx() : generate();
+    }
+  }
+
+  async function handleReturnInDbAndGenerate() {
+    setReturningToDb(true);
+    setReturnDbError('');
+    for (const item of returnItems) {
+      try {
+        await api.returnAsset({ asset_id: item.asset_id, notes: item.note });
+      } catch (e: any) {
+        setReturnDbError(`Failed to return ${item.asset_id}: ${e.message}`);
+        setReturningToDb(false);
+        return;
+      }
+    }
+    setReturnDialogOpen(false);
+    setReturningToDb(false);
+    pendingGenDocx ? generateDocx() : generate();
+  }
+
+  async function handleAddReturn() {
+    const id = returnSearch.trim();
+    if (!id) return;
+    if (returnItems.some(r => r.asset_id.toLowerCase() === id.toLowerCase())) {
+      setReturnSearchErr('Already added');
+      return;
+    }
+    setReturnSearching(true);
+    setReturnSearchErr('');
+    try {
+      const asset = await api.getAsset(id);
+      setReturnItems(prev => [...prev, {
+        asset_id: asset.asset_id,
+        asset_type: asset.asset_type,
+        brand: asset.brand || '',
+        model: asset.model || '',
+        serial_number: asset.serial_number || '',
+        note: todayReturnNote(),
+      }]);
+      setReturnSearch('');
+      returnInputRef.current?.focus();
+    } catch (e: any) {
+      setReturnSearchErr(e.message || 'Asset not found');
+    } finally {
+      setReturnSearching(false);
     }
   }
 
@@ -351,6 +434,113 @@ export function ReportPage() {
         </div>
       )}
 
+      {/* ── Returns section ── */}
+      {selectedEmp && (
+        <div className="md-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <button
+            onClick={() => setShowReturns(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+              padding: '14px 20px', background: showReturns ? '#fce8e6' : 'var(--surface)',
+              border: 'none', cursor: 'pointer', textAlign: 'left',
+              borderBottom: showReturns ? '1px solid #f4b8b4' : 'none',
+            }}
+          >
+            <span className="icon" style={{ color: showReturns ? '#c5221f' : 'var(--text-3)', fontSize: 18 }}>undo</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 600, fontSize: 14, color: showReturns ? '#c5221f' : 'var(--text-2)' }}>
+                Include returned assets (optional)
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 1 }}>
+                Add previously returned assets to appear at the bottom of the report
+              </div>
+            </div>
+            {returnItems.length > 0 && (
+              <span style={{ fontSize: 12, background: '#c5221f', color: '#fff', borderRadius: 10, padding: '2px 8px', fontWeight: 600 }}>
+                {returnItems.length}
+              </span>
+            )}
+            <span className="icon" style={{ fontSize: 18, color: 'var(--text-3)' }}>{showReturns ? 'expand_less' : 'expand_more'}</span>
+          </button>
+
+          {showReturns && (
+            <div style={{ padding: '16px 20px' }}>
+              <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px' }}>
+                Search for assets by ID (they'll appear as additional rows at the bottom of the report with a return note).
+              </p>
+
+              {/* Search bar */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <input
+                  ref={returnInputRef}
+                  className="md-input"
+                  value={returnSearch}
+                  onChange={e => { setReturnSearch(e.target.value); setReturnSearchErr(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddReturn(); }}
+                  placeholder="Enter asset ID (e.g. LT-2507-0001)…"
+                  style={{ flex: 1, fontSize: 13 }}
+                  disabled={returnSearching}
+                />
+                <button
+                  className="md-btn"
+                  onClick={handleAddReturn}
+                  disabled={!returnSearch.trim() || returnSearching}
+                  style={{ background: 'var(--primary-bg)', color: 'var(--primary)', border: '1px solid var(--primary)', whiteSpace: 'nowrap' }}
+                >
+                  {returnSearching
+                    ? <span className="icon icon-sm" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
+                    : <span className="icon icon-sm">add</span>
+                  }
+                  Add
+                </button>
+              </div>
+
+              {returnSearchErr && (
+                <div style={{ fontSize: 12, color: '#c5221f', marginBottom: 10 }}>
+                  <span className="icon icon-sm" style={{ verticalAlign: 'middle' }}>error</span> {returnSearchErr}
+                </div>
+              )}
+
+              {/* Added return items */}
+              {returnItems.length > 0 && (
+                <div style={{ border: '1px solid #f4b8b4', borderRadius: 10, overflow: 'hidden' }}>
+                  {returnItems.map((item, i) => (
+                    <div
+                      key={item.asset_id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderTop: i > 0 ? '1px solid #f4b8b4' : 'none', background: '#fff8f8' }}
+                    >
+                      <span style={{ fontSize: 10, background: '#fce8e6', color: '#c5221f', padding: '2px 6px', borderRadius: 6, fontWeight: 600, flexShrink: 0 }}>RETURN</span>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--text-1)', flexShrink: 0 }}>{item.asset_id}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-2)', flex: 1 }}>{item.asset_type} · {item.brand} {item.model}</span>
+                      <input
+                        className="md-input"
+                        value={item.note}
+                        onChange={e => setReturnItems(prev => prev.map((r, j) => j === i ? { ...r, note: e.target.value } : r))}
+                        style={{ width: 220, fontSize: 12, borderColor: '#f4b8b4' }}
+                        placeholder="Return note…"
+                      />
+                      <button
+                        onClick={() => setReturnItems(prev => prev.filter((_, j) => j !== i))}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, flexShrink: 0 }}
+                        title="Remove"
+                      >
+                        <span className="icon" style={{ fontSize: 18 }}>close</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {returnItems.length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>
+                  No return items added yet.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Empty state */}
       {!selectedEmp && (
         <div className="md-card" style={{ padding: 48, textAlign: 'center' }}>
@@ -367,11 +557,11 @@ export function ReportPage() {
       )}
 
       {/* Generate buttons */}
-      {selectedEmp && preview && preview.rows.length > 0 && (
+      {selectedEmp && preview && (preview.rows.length > 0 || returnItems.length > 0) && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
-            onClick={generate}
-            disabled={generating || generatingDocx || includedCount === 0}
+            onClick={() => handleGenerateClick(false)}
+            disabled={generating || generatingDocx || (includedCount === 0 && returnItems.length === 0)}
             className="md-btn md-btn-primary"
             style={{ flex: 1, minWidth: 200, fontSize: 14, padding: '12px 24px' }}
           >
@@ -379,18 +569,70 @@ export function ReportPage() {
             {generating ? 'Generating PDF…' : `Generate & Download ${docType} PDF`}
           </button>
           <button
-            onClick={generateDocx}
-            disabled={generatingDocx || generating || includedCount === 0}
+            onClick={() => handleGenerateClick(true)}
+            disabled={generatingDocx || generating || (includedCount === 0 && returnItems.length === 0)}
             className="md-btn"
-            style={{
-              fontSize: 14, padding: '12px 24px',
-              background: 'var(--surface-2)', color: 'var(--text-1)',
-              border: '1px solid var(--border)',
-            }}
+            style={{ fontSize: 14, padding: '12px 24px', background: 'var(--surface-2)', color: 'var(--text-1)', border: '1px solid var(--border)' }}
           >
             <span className="icon icon-sm">{generatingDocx ? 'hourglass_empty' : 'description'}</span>
             {generatingDocx ? 'Generating Word…' : 'Download Word (.docx)'}
           </button>
+        </div>
+      )}
+
+      {/* ── Return confirmation dialog ── */}
+      {returnDialogOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--surface)', borderRadius: 16, padding: 28, maxWidth: 480, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 600, color: 'var(--text-1)' }}>
+              Return assets in system?
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px' }}>
+              The following assets are included as returns in this report. Do you also want to update their status to <strong>In Stock</strong> in the database?
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+              {returnItems.map(item => (
+                <div key={item.asset_id} style={{ fontSize: 12, background: '#fce8e6', color: '#c5221f', padding: '3px 10px', borderRadius: 10 }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{item.asset_id}</span>
+                  <span style={{ marginLeft: 6, color: '#a0463a', fontSize: 11 }}>{item.note}</span>
+                </div>
+              ))}
+            </div>
+
+            {returnDbError && (
+              <div style={{ padding: '8px 12px', background: '#fce8e6', color: '#c5221f', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
+                <span className="icon icon-sm">error</span> {returnDbError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                className="md-btn md-btn-primary"
+                disabled={returningToDb}
+                onClick={handleReturnInDbAndGenerate}
+                style={{ background: '#c5221f', borderColor: '#c5221f' }}
+              >
+                <span className="icon icon-sm">{returningToDb ? 'sync' : 'undo'}</span>
+                {returningToDb ? 'Returning…' : 'Return in DB + Download'}
+              </button>
+              <button
+                className="md-btn"
+                disabled={returningToDb}
+                onClick={() => { setReturnDialogOpen(false); pendingGenDocx ? generateDocx() : generate(); }}
+              >
+                <span className="icon icon-sm">download</span>
+                Print only
+              </button>
+              <button
+                className="md-btn"
+                disabled={returningToDb}
+                onClick={() => setReturnDialogOpen(false)}
+                style={{ marginLeft: 'auto' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

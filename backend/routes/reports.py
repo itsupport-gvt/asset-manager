@@ -305,6 +305,18 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
         row["notes"] = row_notes.get(row["asset_id"], "") if not row["is_charger"] else ""
     rows = [r for r in all_rows if r["asset_id"] not in excluded_ids]
 
+    # Append extra return rows passed directly from the frontend
+    for er in body.get("extra_rows", []):
+        rows.append({
+            "asset_id":      er.get("asset_id", ""),
+            "asset_type":    er.get("asset_type", ""),
+            "brand":         er.get("brand", ""),
+            "model":         er.get("model", ""),
+            "serial_number": er.get("serial_number", ""),
+            "notes":         er.get("notes", ""),
+            "is_charger":    False,
+        })
+
     if not rows:
         raise HTTPException(status_code=400, detail="No assets selected for the report")
 
@@ -362,6 +374,17 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
     for row in all_rows:
         row["notes"] = row_notes.get(row["asset_id"], "") if not row["is_charger"] else ""
     rows = [r for r in all_rows if r["asset_id"] not in excluded_ids]
+
+    for er in body.get("extra_rows", []):
+        rows.append({
+            "asset_id":      er.get("asset_id", ""),
+            "asset_type":    er.get("asset_type", ""),
+            "brand":         er.get("brand", ""),
+            "model":         er.get("model", ""),
+            "serial_number": er.get("serial_number", ""),
+            "notes":         er.get("notes", ""),
+            "is_charger":    False,
+        })
 
     if not rows:
         raise HTTPException(status_code=400, detail="No assets selected for the report")

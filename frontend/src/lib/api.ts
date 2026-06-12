@@ -43,7 +43,7 @@ export const api = {
       `/api/employee/${encodeURIComponent(email)}/bulk-assign`, json(body)
     ),
   reportPreview: (email: string) => req<ReportPreview>(`/api/report/preview/${encodeURIComponent(email)}`),
-  generateReport: async (body: { employee_email: string; doc_type: string; excluded_ids: string[]; row_notes?: Record<string, string> }): Promise<Blob> => {
+  generateReport: async (body: { employee_email: string; doc_type: string; excluded_ids: string[]; row_notes?: Record<string, string>; extra_rows?: { asset_id: string; asset_type: string; brand: string; model: string; serial_number: string; notes: string }[] }): Promise<Blob> => {
     const res = await fetch('/api/report/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -110,6 +110,7 @@ export const api = {
     doc_type: string;
     excluded_ids: string[];
     row_notes?: Record<string, string>;
+    extra_rows?: { asset_id: string; asset_type: string; brand: string; model: string; serial_number: string; notes: string }[];
   }): Promise<Blob> => {
     const res = await fetch('/api/report/generate-docx', {
       method: 'POST',
