@@ -87,22 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    (async () => {
-      try {
-        const msUser = await bridge().getMsUser?.()
-        if (msUser) {
-          const me = await fetchMe()
-          setUser(me)
-        } else {
-          const me = await fetchMe()
-          setUser(me)
-        }
-      } catch {
-        setUser(null)
-      } finally {
-        setLoading(false)
-      }
-    })()
+    fetchMe()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
   }, [fetchMe])
 
   const login = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {

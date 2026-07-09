@@ -28,7 +28,11 @@ async function getMsToken(): Promise<string | null> {
   if (_msToken && Date.now() - _msTokenAt < _MS_TTL) return _msToken
   try {
     const win = window as Window & { assetManager?: { getMsToken?: () => Promise<string | null> } }
-    const t = (await win.assetManager?.getMsToken?.()) ?? null
+    const ipcCall = win.assetManager?.getMsToken?.() ?? Promise.resolve(null)
+    const t = await Promise.race([
+      ipcCall,
+      new Promise<null>(r => setTimeout(() => r(null), 6000)),
+    ])
     _msToken   = t
     _msTokenAt = Date.now()
   } catch {

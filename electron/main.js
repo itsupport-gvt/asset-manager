@@ -131,7 +131,13 @@ async function msAcquireSilent() {
     if (!accounts || accounts.length === 0) return null;
     if (!_msalAccount && accounts.length > 1) return null;
     const account = _msalAccount || accounts[0];
-    const result  = await _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account });
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('silent acquire timeout')), 5000)
+    );
+    const result  = await Promise.race([
+      _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account }),
+      timeout,
+    ]);
     _msalAccount  = result.account;
     _msIdToken    = result.idToken;
     return result;
