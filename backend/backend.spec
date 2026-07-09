@@ -17,7 +17,7 @@ block_cipher = None
 # collect_all returns (datas, binaries, hiddenimports)
 pkgs = [
     'fastapi', 'starlette', 'pydantic', 'pydantic_core',
-    'sqlalchemy', 'msal', 'docxtpl', 'docx2pdf', 'qrcode',
+    'sqlalchemy', 'httpx', 'jwt', 'docxtpl', 'docx2pdf', 'qrcode',
     'PIL', 'lxml', 'jinja2', 'docx', 'reportlab',
     'pdfplumber', 'cryptography', 'websockets', 'anyio',
 ]
@@ -78,6 +78,9 @@ a = Analysis(
         # HTTP / async
         'h11', 'httptools', 'anyio', 'anyio._backends._asyncio',
         'anyio._backends._trio',
+        # httpx + PyJWT (delegated Graph auth)
+        'httpx', 'httpx._transports.default', 'httpx._transports.asgi',
+        'jwt', 'jwt.algorithms', 'jwt.api_jwk', 'jwt.jwks_client',
         # SQLAlchemy dialects
         'sqlalchemy.dialects.sqlite',
         'sqlalchemy.dialects.sqlite.pysqlite',
