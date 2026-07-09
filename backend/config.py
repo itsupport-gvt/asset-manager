@@ -16,10 +16,7 @@ def _load_env():
 
 _load_env()
 
-TENANT_ID     = os.getenv("SHAREPOINT_TENANT_ID")
-CLIENT_ID     = os.getenv("SHAREPOINT_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SHAREPOINT_CLIENT_SECRET")
-FILE_URL      = os.getenv("SHAREPOINT_FILE_URL")
+FILE_URL = os.getenv("SHAREPOINT_FILE_URL")
 
 # Table names — confirmed from Office Scripts
 MASTER_TABLE = "MasterTable"
@@ -27,8 +24,10 @@ LOG_TABLE    = "Assignment_Log"
 EMP_TABLE    = "tbl_Employees"
 
 # Optional public URL override (e.g. ngrok HTTPS tunnel for scanner QR code)
-# Set in .env as: NGROK_URL=https://xxxx.ngrok-free.app
 NGROK_URL = os.getenv("NGROK_URL", "").rstrip("/")
+
+# Microsoft Entra ID auth (optional — auth is disabled when AUTH_CLIENT_ID is empty)
+AUTH_CLIENT_ID = os.getenv("AUTH_CLIENT_ID", "")
 
 # Type code map — exact copy from Register_New_Asset.osts
 TYPE_CODE_MAP: dict[str, str] = {

@@ -67,6 +67,7 @@ export function SwapPage() {
         condition,
         notes,
       });
+      api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
       nav(`/asset/${encodeURIComponent(assetId)}`, {
         state: { toast: mode === 'person' ? 'Asset swapped to new person' : 'Stock swap complete' },
       });

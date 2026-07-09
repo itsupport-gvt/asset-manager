@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ScanField } from '../components/ScanField';
 import { SpecInput, StorageInput, RAM_UNITS, SCREEN_UNITS } from '../components/SpecInput';
+import { MarkdownTextarea } from '../components/MarkdownTextarea';
 import type { CreateAssetRequest } from '../lib/types';
 
 const ASSET_TYPES = [
@@ -44,6 +45,9 @@ function SubDivider({ label }: { label: string }) {
 
 export function NewAssetPage() {
     const nav = useNavigate();
+    const [suggestions, setSuggestions] = useState<Record<string, string[]>>({});
+    useEffect(() => { api.getAssetSuggestions().then(setSuggestions).catch(() => {}); }, []);
+
     const [form, setForm] = useState<CreateAssetRequest>({
         asset_type: '', status: 'In Stock', condition: 'New',
         brand: '', model: '', serial_number: '',
@@ -64,6 +68,7 @@ export function NewAssetPage() {
         setLoading(true); setError('');
         try {
             const res = await api.createAsset(form);
+            api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
             nav(`/asset/${encodeURIComponent(res.asset_id)}`);
         } catch (e: any) {
             setError(e.message || 'Failed to create asset');
@@ -113,8 +118,8 @@ export function NewAssetPage() {
             <div className="md-card" style={{ padding: 24 }}>
                 <SectionTitle icon="devices" title="Hardware Identity" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <ScanField label="Brand" value={form.brand} onChange={set('brand')} placeholder="e.g. Dell" />
-                    <ScanField label="Model" value={form.model} onChange={set('model')} placeholder="e.g. XPS 15" />
+                    <ScanField label="Brand" value={form.brand} onChange={set('brand')} placeholder="e.g. Dell" suggestions={suggestions.brand} />
+                    <ScanField label="Model" value={form.model} onChange={set('model')} placeholder="e.g. XPS 15" suggestions={suggestions.model} />
                     <div style={{ gridColumn: '1 / -1' }}>
                         <ScanField label="Serial Number" value={form.serial_number} onChange={set('serial_number')} placeholder="S/N from device label" />
                     </div>
@@ -129,7 +134,7 @@ export function NewAssetPage() {
 
                         {/* Compute */}
                         <SubDivider label="Compute" />
-                        <ScanField label="Processor (CPU)" value={form.processor || ''} onChange={set('processor')} placeholder="e.g. Intel Core i7-1355U" />
+                        <ScanField label="Processor (CPU)" value={form.processor || ''} onChange={set('processor')} placeholder="e.g. Intel Core i7-1355U" suggestions={suggestions.processor} />
                         <SpecInput  label="Memory (RAM)" value={form.memory_ram || ''} onChange={set('memory_ram')} units={RAM_UNITS} placeholder="16" />
                         <ScanField label="Graphics (GPU)" value={form.graphics || ''} onChange={set('graphics')} placeholder="e.g. NVIDIA RTX 4060" />
                         <div>
@@ -163,7 +168,7 @@ export function NewAssetPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                     <ScanField label="Purchase Date"      value={form.purchase_date || ''}  onChange={set('purchase_date')}  type="date" />
                     <ScanField label="Purchase Price"     value={form.purchase_price || ''} onChange={set('purchase_price')} placeholder="e.g. 1200" />
-                    <ScanField label="Vendor / Supplier"  value={form.vendor || ''}         onChange={set('vendor')}         placeholder="e.g. Ingram Micro" />
+                    <ScanField label="Vendor / Supplier"  value={form.vendor || ''}         onChange={set('vendor')}         placeholder="e.g. Ingram Micro" suggestions={suggestions.vendor} />
                     <ScanField label="Invoice Reference"  value={form.invoice_ref || ''}    onChange={set('invoice_ref')}    />
                     <ScanField label="Warranty End Date"  value={form.warranty_end || ''}   onChange={set('warranty_end')}   type="date" />
                 </div>
@@ -173,15 +178,11 @@ export function NewAssetPage() {
             <div className="md-card" style={{ padding: 24 }}>
                 <SectionTitle icon="tune" title="Deployment & Notes" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                    <ScanField label="Location"     value={form.location || ''}     onChange={set('location')} />
+                    <ScanField label="Location"     value={form.location || ''}     onChange={set('location')} suggestions={suggestions.location} />
                     <ScanField label="PIN / Password" value={form.pin_password || ''} onChange={set('pin_password')} />
                     <div style={{ gridColumn: '1 / -1' }}>
                         <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Notes</label>
-                        <textarea
-                            value={form.notes} onChange={e => set('notes')(e.target.value)} rows={3}
-                            className="md-input" style={{ resize: 'vertical', minHeight: 80, padding: '10px 14px' }}
-                            placeholder="Any extra details…"
-                        />
+                        <MarkdownTextarea value={form.notes || ''} onChange={set('notes')} rows={3} placeholder="Any extra details…" />
                     </div>
                 </div>
             </div>

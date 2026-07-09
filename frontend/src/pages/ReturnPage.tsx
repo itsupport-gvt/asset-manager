@@ -28,6 +28,7 @@ export function ReturnPage() {
     setLoading(true); setError('');
     try {
       const res = await api.returnAsset({ asset_id: assetId, condition, notes });
+      api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
       nav(`/asset/${encodeURIComponent(assetId)}`, { state: { toast: `Returned from ${res.returned_from}` } });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Return failed');

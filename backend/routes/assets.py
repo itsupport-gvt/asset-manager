@@ -5,7 +5,6 @@ from database import get_db
 from models_db import DBAsset, DBEmployee
 from models import AssetResponse
 from config import MASTER_TABLE
-from graph_client import graph
 
 router = APIRouter(prefix="/api")
 
@@ -93,6 +92,31 @@ async def field_values(db: Session = Depends(get_db)):
         "location": clean(locations),
     }
 
+@router.get("/asset-suggestions")
+async def asset_suggestions(db: Session = Depends(get_db)):
+    """Distinct non-empty values for all AutoInput fields in asset forms."""
+    def _vals(col):
+        rows = db.query(col).distinct().all()
+        result = set()
+        for (v,) in rows:
+            if v and str(v).strip().lower() not in ("none", "n/a", "na", "-", ""):
+                result.add(str(v).strip())
+        return sorted(result, key=str.lower)
+
+    return {
+        "brand":       _vals(DBAsset.brand),
+        "model":       _vals(DBAsset.model),
+        "vendor":      _vals(DBAsset.vendor),
+        "location":    _vals(DBAsset.location),
+        "processor":   _vals(DBAsset.processor),
+        "storage":     _vals(DBAsset.storage),
+        "storage_2":   _vals(DBAsset.storage_2),
+        "memory_ram":  _vals(DBAsset.memory_ram),
+        "graphics":    _vals(DBAsset.graphics),
+        "screen_size": _vals(DBAsset.screen_size),
+        "os":          _vals(DBAsset.os),
+    }
+
 @router.get("/assets", response_model=list[AssetResponse])
 async def list_assets(
     q: str = Query(default="", description="Search across ID, brand, model, serial"),
@@ -152,106 +176,15 @@ async def search_assets(
 
 @router.post("/asset/{asset_id}/sync")
 async def sync_single_asset(asset_id: str, db: Session = Depends(get_db)):
-    """Push a single asset's current state to Excel MasterTable immediately."""
+    """Mark a single asset as pending sync (use /api/sync/push with Graph token to push)."""
     asset = db.query(DBAsset).filter(
         (DBAsset.asset_id == asset_id) | (DBAsset.asset_id_qr == asset_id)
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found")
-
-    try:
-        headers = graph.get_table_headers(MASTER_TABLE)
-        existing_rows = graph.get_table_rows(MASTER_TABLE)
-        row_index_by_id = {
-            str(r.get("Asset ID", r.get("AssetID", ""))).strip(): r["_row_index"]
-            for r in existing_rows
-        }
-        emp = db.query(DBEmployee).filter(
-            DBEmployee.email == asset.assigned_to_email
-        ).first() if asset.assigned_to_email else None
-        emp_display = emp.employee_display if emp and emp.employee_display else (emp.full_name if emp else "Not Assigned")
-        field_map = {
-            # Asset ID variants
-            "Asset ID":         asset.asset_id,
-            "AssetID":          asset.asset_id,
-            # QR ID variants
-            "Asset_ID_QR":      asset.asset_id_qr or asset.asset_id.replace("-", ""),
-            "AssetIDQR":        asset.asset_id_qr or asset.asset_id.replace("-", ""),
-            # Asset type variants
-            "Asset Type":       asset.asset_type or "",
-            "Asset_Type":       asset.asset_type or "",
-            "Item Type":        asset.asset_type or "",
-            # Status / Condition
-            "Status":           asset.status or "",
-            "Condition":        asset.condition or "",
-            # Brand / Model
-            "Brand":            asset.brand or "",
-            "Model":            asset.model or "",
-            # Serial number variants
-            "Serial Number":    asset.serial_number or "",
-            "Serial_Number":    asset.serial_number or "",
-            "SerialNumber":     asset.serial_number or "",
-            # Specs
-            "Storage":          asset.storage or "",
-            "Storage_2":        asset.storage_2 or "",
-            "Secondary Storage": asset.storage_2 or "",
-            "RAM":              asset.memory_ram or "",
-            "Memory(RAM)":      asset.memory_ram or "",
-            # Purchase info variants
-            "Purchase Date":    asset.purchase_date or "",
-            "Purchase_Date":    asset.purchase_date or "",
-            "Purchase Price":   asset.purchase_price or "",
-            "Purchase_Price":   asset.purchase_price or "",
-            "Vendor":           asset.vendor or "",
-            # Invoice / Warranty variants
-            "Invoice Ref":      asset.invoice_ref or "",
-            "Invoice Reference": asset.invoice_ref or "",
-            "Warranty End":     asset.warranty_end or "",
-            "Warranty_End":     asset.warranty_end or "",
-            # Assignment info variants
-            "EmployeeID":       emp.employee_id if emp else "",
-            "Employee ID":      emp.employee_id if emp else "",
-            "EmployeeDisplay":  emp_display,
-            "Username":         asset.assigned_to_email or "",
-            "Location":         asset.location or "",
-            "Notes":            asset.notes or "",
-            # Password variants
-            "PIN/Password":     asset.pin_password or "",
-            "Pin/Password":     asset.pin_password or "",
-            # Assignment ID / date variants
-            "Assignment ID":    asset.assignment_id or "",
-            "AssignmentID":     asset.assignment_id or "",
-            "Date Assigned":    asset.date_assigned or "",
-            "DateAssigned":     asset.date_assigned or "",
-            # Charger fields
-            "Charger_Model":    asset.charger_model or "",
-            "Charger Model":    asset.charger_model or "",
-            "Charger_Serial":   asset.charger_serial or "",
-            "Charger Serial":   asset.charger_serial or "",
-            "Charger_Notes":    asset.charger_notes or "",
-            "Charger Notes":    asset.charger_notes or "",
-            "Processor":        asset.processor or "",
-            "Graphics":         asset.graphics or "",
-            "Screen_Size":      asset.screen_size or "",
-            "Screen Size":      asset.screen_size or "",
-            "OS":               asset.os or "",
-            "Operating System": asset.os or "",
-        }
-        row_values = [field_map.get(h, "") for h in headers]
-
-        if asset.asset_id in row_index_by_id:
-            graph.update_table_row(MASTER_TABLE, row_index_by_id[asset.asset_id], row_values)
-            action = "updated"
-        else:
-            graph.add_table_row(MASTER_TABLE, row_values)
-            action = "added"
-
-        asset.needs_sync = False
-        db.commit()
-        return {"success": True, "action": action, "asset_id": asset.asset_id}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Excel sync failed: {str(e)}")
+    asset.needs_sync = True
+    db.commit()
+    return {"success": True, "asset_id": asset.asset_id, "message": "Marked for sync — call /api/sync/push to push to Excel."}
 
 
 @router.get("/assets/export")

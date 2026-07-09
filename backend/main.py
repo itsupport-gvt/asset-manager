@@ -2,7 +2,10 @@
 Asset Manager — FastAPI Backend
 Serves the React frontend, REST API, WebSocket scanner bridge, and QR code helper.
 """
+import collections
+import hmac
 import io
+import logging
 import os
 import sys
 import socket
@@ -11,11 +14,12 @@ from pathlib import Path
 # ── Frozen (PyInstaller) vs dev path resolution ──────────────────────────────
 _BASE = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).parent
 
-from fastapi import FastAPI, WebSocket, BackgroundTasks, Depends
+from fastapi import FastAPI, WebSocket, BackgroundTasks, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from routes.assets        import router as assets_router
 from routes.employees     import router as employees_router
@@ -24,14 +28,51 @@ from routes.stats         import router as stats_router
 from routes.reports       import router as reports_router
 from routes.print_overlay import router as overlay_router
 from routes.activity      import router as activity_router
+from routes.users         import router as users_router
 from ws.scanner       import scanner_ws, app_ws, scanner_status
 
 from database import engine, Base, get_db, SessionLocal, run_migrations
 from models_db import DBAsset, DBEmployee
 from services.sync_service import sync_from_excel, sync_to_excel, sync_logs_from_excel, get_current_sync_status
+from graph_client import GraphClient
 from config import NGROK_URL
 
 import traceback
+
+# ── Logging setup ─────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+_log_buffer: collections.deque = collections.deque(maxlen=500)
+
+
+class _BufferHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            _log_buffer.append(self.format(record))
+        except Exception:
+            pass
+
+
+_buf_handler = _BufferHandler()
+_buf_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+logging.getLogger().addHandler(_buf_handler)
+
+APP_VERSION = "2.0.0"
+_APP_SECRET_TOKEN: str = os.environ.get("APP_SECRET_TOKEN", "").strip()
+
+
+class TokenAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if _APP_SECRET_TOKEN and request.url.path.startswith("/api/"):
+            provided = request.headers.get("X-App-Token", "")
+            if not hmac.compare_digest(provided, _APP_SECRET_TOKEN):
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
 
 
 def get_lan_ip() -> str:
@@ -65,13 +106,17 @@ def get_scanner_url() -> str:
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Asset Manager API", version="1.0.0")
+app = FastAPI(title="Asset Manager API", version=APP_VERSION)
+
+app.add_middleware(TokenAuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # same-network internal tool
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
+                   "http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-App-Token", "Authorization", "X-MS-Graph-Token"],
 )
 
 # Serve local scanner JS deps so mobile can load them without internet
@@ -79,61 +124,20 @@ SCANNER_LIB_DIR = _BASE / "scanner_static"
 if SCANNER_LIB_DIR.exists():
     app.mount("/scanner-lib", StaticFiles(directory=SCANNER_LIB_DIR), name="scanner-lib")
 
-# ── Background Sync Helpers ───────────────────────────────────────────────────
-
-import asyncio
-
-def _run_full_sync():
-    """Pull assets + employees, pull logs, push any pending changes. Runs in a thread."""
-    db = SessionLocal()
-    try:
-        print("[auto-sync] Pull from Excel…")
-        sync_from_excel(db)
-        print("[auto-sync] Pull activity logs…")
-        sync_logs_from_excel(db)
-        print("[auto-sync] Push pending changes…")
-        sync_to_excel(db)
-        print("[auto-sync] Done.")
-    except Exception as e:
-        print(f"[auto-sync] Error: {e}")
-    finally:
-        db.close()
-
-
-async def _periodic_sync_task():
-    """Runs a full sync 30 s after startup, then every 60 minutes."""
-    await asyncio.sleep(30)
-    while True:
-        try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, _run_full_sync)
-        except Exception as e:
-            print(f"[auto-sync] Executor error: {e}")
-        await asyncio.sleep(60 * 60)
-
-
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
-    """Apply migrations, create tables, then kick off auto-sync in the background."""
+    """Apply migrations and create tables on startup."""
     Base.metadata.create_all(bind=engine)
     run_migrations()
-    # Seed DB synchronously on first run (no employees or assets yet)
     db = SessionLocal()
     try:
         emp_count   = db.query(DBEmployee).count()
         asset_count = db.query(DBAsset).count()
-        if emp_count == 0 or asset_count == 0:
-            print(f"[startup] DB empty — seeding from Excel (blocking)…")
-            sync_from_excel(db)
-            sync_logs_from_excel(db)
-        else:
-            print(f"[startup] DB ready ({emp_count} employees, {asset_count} assets). Auto-sync will run in background.")
+        print(f"[startup] DB ready: {emp_count} employees, {asset_count} assets. First pull is user-triggered.")
     finally:
         db.close()
-    # Schedule periodic full sync (first run 15 s after startup)
-    asyncio.create_task(_periodic_sync_task())
 
 # ── REST routes ───────────────────────────────────────────────────────────────
 
@@ -144,25 +148,40 @@ app.include_router(stats_router)
 app.include_router(reports_router)
 app.include_router(overlay_router)
 app.include_router(activity_router)
+app.include_router(users_router)
 
 # ── Sync Routes ───────────────────────────────────────────────────────────────
 
+def _graph_from_header(x_ms_graph_token: str | None) -> GraphClient:
+    if not x_ms_graph_token:
+        raise RuntimeError("No Graph token provided. Sign in first and try again.")
+    return GraphClient(token=x_ms_graph_token)
+
+
 @app.post("/api/sync/push")
-def push_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
-    """Pushes local pending changes up to Excel."""
+def push_sync(
+    db: Session = Depends(get_db),
+    x_ms_graph_token: str | None = Header(None, alias="X-MS-Graph-Token"),
+):
+    """Pushes local pending changes up to Excel using the signed-in user's Graph token."""
     try:
-        sync_to_excel(db)
+        graph = _graph_from_header(x_ms_graph_token)
+        sync_to_excel(db, graph)
         return {"success": True, "message": "Pushed changes to Excel."}
     except Exception as e:
         traceback.print_exc()
         return {"success": False, "detail": str(e)}
 
 @app.post("/api/sync/pull")
-def pull_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
+def pull_sync(
+    db: Session = Depends(get_db),
+    x_ms_graph_token: str | None = Header(None, alias="X-MS-Graph-Token"),
+):
     """Pulls current Excel state (assets + employees + activity logs) down to local DB."""
     try:
-        sync_from_excel(db)
-        log_result = sync_logs_from_excel(db)
+        graph = _graph_from_header(x_ms_graph_token)
+        sync_from_excel(db, graph)
+        log_result = sync_logs_from_excel(db, graph)
         return {
             "success": True,
             "message": f"Pulled from Excel. Imported {log_result['imported']} new log entries.",
@@ -173,10 +192,14 @@ def pull_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
         return {"success": False, "detail": str(e)}
 
 @app.post("/api/sync/pull-logs")
-def pull_logs_sync(_: BackgroundTasks, db: Session = Depends(get_db)):
+def pull_logs_sync(
+    db: Session = Depends(get_db),
+    x_ms_graph_token: str | None = Header(None, alias="X-MS-Graph-Token"),
+):
     """Pulls historical activity logs from Excel Assignment_Log table into local DB (dedup-safe)."""
     try:
-        result = sync_logs_from_excel(db)
+        graph = _graph_from_header(x_ms_graph_token)
+        result = sync_logs_from_excel(db, graph)
         return {"success": True, "message": f"Imported {result['imported']} logs, skipped {result['skipped']} duplicates.", **result}
     except Exception as e:
         traceback.print_exc()
@@ -189,22 +212,18 @@ def sync_status(db: Session = Depends(get_db)):
     status  = get_current_sync_status()
     return {"pending_changes": pending, "last_sync": status.get("last_sync"), "status": status.get("status")}
 
-@app.get("/api/debug/excel-headers")
-def debug_excel_headers():
-    """Returns the first row of MasterTable and employee table to identify column names."""
-    from config import MASTER_TABLE, EMP_TABLE
-    from graph_client import graph
-    try:
-        asset_rows  = graph.get_table_rows(MASTER_TABLE)
-        emp_rows    = graph.get_table_rows(EMP_TABLE)
-        return {
-            "master_table_columns": list(asset_rows[0].keys()) if asset_rows else [],
-            "master_table_sample": dict(list(asset_rows[0].items())[:8]) if asset_rows else {},
-            "emp_table_columns":   list(emp_rows[0].keys())   if emp_rows  else [],
-        }
-    except Exception as e:
-        return {"error": str(e)}
+@app.post("/api/admin/mark-all-for-sync")
+def mark_all_for_sync(db: Session = Depends(get_db)):
+    """Mark every asset as needs_sync=True so the next push repopulates all Excel rows."""
+    count = db.query(DBAsset).update({"needs_sync": True})
+    db.commit()
+    return {"marked": count}
 
+@app.get("/api/admin/logs")
+def get_admin_logs(n: int = 200):
+    """Return the last N lines from the in-memory log buffer (max 500)."""
+    lines = list(_log_buffer)[-(min(n, 500)):]
+    return {"lines": lines, "total": len(_log_buffer)}
 
 # ── WebSocket routes ──────────────────────────────────────────────────────────
 
@@ -279,6 +298,7 @@ async def scanner_qr():
 async def health():
     return {
         "status": "ok",
+        "version": APP_VERSION,
         "scanner_url": get_scanner_url(),
         "ssl": get_scheme() == "https",
         "ws": scanner_status(),

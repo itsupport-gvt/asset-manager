@@ -61,6 +61,8 @@ def run_migrations():
         ("assignment_logs",  "asset_type",       "TEXT"),
         ("assignment_logs",  "asset_label",      "TEXT"),
         ("assignment_logs",  "source_log_id",   "TEXT"),
+        # v2.0.0 — notes column on assets (may already exist from model; idempotent)
+        ("assets",           "notes",            "TEXT DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:

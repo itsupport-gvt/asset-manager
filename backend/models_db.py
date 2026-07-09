@@ -74,3 +74,15 @@ class DBAssignmentLog(Base):
     asset_type     = Column(String, nullable=True)   # e.g. "Laptop"
     asset_label    = Column(String, nullable=True)   # e.g. "Dell XPS 15 LT-2312-0001"
     source_log_id  = Column(String, nullable=True, index=True)  # Excel LogID � used for dedup on pull
+
+
+class DBAuthUser(Base):
+    __tablename__ = "auth_users"
+
+    oid = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    entra_roles = Column(String, nullable=True)  # JSON array string
+    is_active = Column(Boolean, default=True)
+    last_login = Column(String, nullable=True)
+    created_at = Column(String, nullable=True)

@@ -1,14 +1,96 @@
 import type { Asset, Employee, AssignRequest, ReturnRequest, CreateAssetRequest, ReportPreview, OverlayConfig, CalibrationData, OverlayRow, PrintLogEntry, ActivityLogPage } from './types';
 
+// ── Per-launch app token (Electron IPC secret) ────────────────────────────────
+let _cachedToken: string | null | undefined = undefined
+
+async function getAppToken(): Promise<string | null> {
+  if (_cachedToken !== undefined) return _cachedToken
+  try {
+    const win = window as Window & { assetManager?: { getAppToken?: () => Promise<string> } }
+    _cachedToken = (await win.assetManager?.getAppToken?.()) ?? null
+  } catch {
+    _cachedToken = null
+  }
+  return _cachedToken
+}
+
+// ── Microsoft ID token ────────────────────────────────────────────────────────
+let _msToken: string | null = null
+let _msTokenAt = 0
+const _MS_TTL  = 50 * 60 * 1000
+
+export function clearMsToken() {
+  _msToken = null
+  _msTokenAt = 0
+}
+
+async function getMsToken(): Promise<string | null> {
+  if (_msToken && Date.now() - _msTokenAt < _MS_TTL) return _msToken
+  try {
+    const win = window as Window & { assetManager?: { getMsToken?: () => Promise<string | null> } }
+    const t = (await win.assetManager?.getMsToken?.()) ?? null
+    _msToken   = t
+    _msTokenAt = Date.now()
+  } catch {
+    _msToken = null
+  }
+  return _msToken
+}
+
+// ── Microsoft Graph access token (for SharePoint sync) ─────────────────────────
+let _msGraphToken: string | null = null
+let _msGraphTokenAt = 0
+
+async function getMsGraphToken(): Promise<string | null> {
+  if (_msGraphToken && Date.now() - _msGraphTokenAt < _MS_TTL) return _msGraphToken
+  try {
+    const win = window as Window & { assetManager?: { getMsGraphToken?: () => Promise<string | null> } }
+    const t = (await win.assetManager?.getMsGraphToken?.()) ?? null
+    _msGraphToken   = t
+    _msGraphTokenAt = Date.now()
+  } catch {
+    _msGraphToken = null
+  }
+  return _msGraphToken
+}
+
+// syncReq — like req() but also injects X-MS-Graph-Token for SharePoint calls
+async function syncReq<T>(path: string): Promise<T> {
+  const appToken   = await getAppToken()
+  const msToken    = await getMsToken()
+  const graphToken = await getMsGraphToken()
+  const headers: Record<string, string> = {}
+  if (appToken)   headers['X-App-Token']       = appToken
+  if (msToken)    headers['Authorization']      = `Bearer ${msToken}`
+  if (graphToken) headers['X-MS-Graph-Token']   = graphToken
+  const res = await fetch(BASE + path, { method: 'POST', headers })
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail ?? detail } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  return res.json()
+}
+
 const BASE = '';  // same origin — Vite proxies to backend in dev, served by FastAPI in prod
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, options);
+  const appToken = await getAppToken()
+  const msToken  = await getMsToken()
+  const headers: Record<string, string> = { ...(options?.headers as Record<string, string>) }
+  if (appToken) headers['X-App-Token']   = appToken
+  if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
+
+  const res = await fetch(BASE + path, { ...options, headers });
+  if (res.status === 401) {
+    clearMsToken()
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
     throw new Error(detail);
   }
+  if (res.status === 204) return undefined as T
   return res.json();
 }
 
@@ -20,8 +102,8 @@ const json = (body: unknown): RequestInit => ({
 
 export const api = {
   getAsset: (id: string) => req<Asset>(`/api/asset/${encodeURIComponent(id)}`),
-  // Add this line inside the `export const api = { ... }` block:
   updateAsset: (id: string, body: Partial<CreateAssetRequest>) => req<{ success: boolean }>(`/api/asset/update/${encodeURIComponent(id)}`, json(body)),
+  getAssetSuggestions: () => req<Record<string, string[]>>('/api/asset-suggestions'),
   listAssets: (q = '', status = '') =>
     req<Asset[]>(`/api/assets?q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}`),
   searchAssets: (params: Record<string, string>) => {
@@ -44,9 +126,14 @@ export const api = {
     ),
   reportPreview: (email: string) => req<ReportPreview>(`/api/report/preview/${encodeURIComponent(email)}`),
   generateReport: async (body: { employee_email: string; doc_type: string; excluded_ids: string[]; row_notes?: Record<string, string>; extra_rows?: { asset_id: string; asset_type: string; brand: string; model: string; serial_number: string; notes: string }[] }): Promise<Blob> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
     const res = await fetch('/api/report/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -61,9 +148,14 @@ export const api = {
   overlayConfig: () => req<OverlayConfig>('/api/overlay/config'),
 
   calibrateFromPdf: async (file: File): Promise<{ calibration: CalibrationData }> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = {}
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch('/api/overlay/calibrate', { method: 'POST', body: form });
+    const res = await fetch('/api/overlay/calibrate', { method: 'POST', headers, body: form });
     if (!res.ok) {
       let detail = res.statusText;
       try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
@@ -73,9 +165,14 @@ export const api = {
   },
 
   generateOverlay: async (body: { rows: OverlayRow[]; calibration?: CalibrationData }): Promise<Blob> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
     const res = await fetch('/api/overlay/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -96,9 +193,14 @@ export const api = {
     ),
 
   clearPrintLog: async (empId: string, docType: string): Promise<{ cleared: boolean }> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = {}
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
     const res = await fetch(
       `/api/overlay/print-log/${encodeURIComponent(empId)}/${encodeURIComponent(docType)}`,
-      { method: 'DELETE' }
+      { method: 'DELETE', headers }
     );
     if (!res.ok) throw new Error(res.statusText);
     return res.json();
@@ -112,9 +214,14 @@ export const api = {
     row_notes?: Record<string, string>;
     extra_rows?: { asset_id: string; asset_type: string; brand: string; model: string; serial_number: string; notes: string }[];
   }): Promise<Blob> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
     const res = await fetch('/api/report/generate-docx', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -165,7 +272,35 @@ export const api = {
   },
 
   // ── Sync: Pull Logs ────────────────────────────────────────────────────────
-  pullLogs: () => req<{ success: boolean; imported: number; skipped: number; total: number; message?: string; detail?: string }>('/api/sync/pull-logs', { method: 'POST' }),
+  pullLogs: () => syncReq<{ success: boolean; imported: number; skipped: number; total: number; message?: string; detail?: string }>('/api/sync/pull-logs'),
+
+  // ── Push to Excel / Pull from Excel (require Graph token) ─────────────────
+  pushToExcel: () =>
+    syncReq<{ success: boolean; message?: string; detail?: string }>('/api/sync/push'),
+  pullFromExcel: () =>
+    syncReq<{ success: boolean; message?: string; imported?: number; skipped?: number }>('/api/sync/pull'),
+  getSyncStatus: () =>
+    req<{ pending_changes: number; last_sync?: string; status?: string }>('/api/sync/status'),
+  markAllForSync: () =>
+    req<{ marked: number }>('/api/admin/mark-all-for-sync', { method: 'POST' }),
+
+  // ── Admin logs ────────────────────────────────────────────────────────────
+  getAdminLogs: (n = 300) =>
+    req<{ lines: string[]; total: number }>(`/api/admin/logs?n=${n}`),
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  getMe: () =>
+    req<{ auth_enabled: boolean; user: { oid: string; name: string; email: string; role: string } | null }>('/api/auth/me'),
+
+  listAuthUsers: () =>
+    req<{ oid: string; name: string; email: string; effective_role: string; is_active: boolean; last_login: string; entra_roles: string[] }[]>('/api/auth/users'),
+
+  setUserStatus: (oid: string, is_active: boolean) =>
+    req<{ oid: string; is_active: boolean }>(`/api/auth/users/${oid}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active }),
+    }),
 
   // ── Swap ──────────────────────────────────────────────────────────────────
   swapAsset: (body: {

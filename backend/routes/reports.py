@@ -99,7 +99,7 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.enum.table import WD_TABLE_ALIGNMENT
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Pt
 
     template_path = TEMPLATES[doc_type]()
     if not template_path.exists():
@@ -109,41 +109,26 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
 
     clean_name = emp_name.replace(" ", "_")
     out_docx = output_dir / f"{doc_type}_{clean_name}_{emp_id}.docx"
+    out_pdf  = output_dir / f"{doc_type}_{clean_name}_{emp_id}.pdf"
 
     doc = DocxTemplate(str(template_path))
     sd  = doc.new_subdoc()
     table = sd.add_table(rows=1, cols=7)
 
-    tbl   = table._tbl
+    # Table borders
+    tbl = table._tbl
     tblPr = tbl.tblPr
-
-    # ── Remove inherited table style (prevents template-color banding) ─────────
-    for tag in ("w:tblStyle", "w:tblLook"):
-        el = tblPr.find(qn(tag))
-        if el is not None:
-            tblPr.remove(el)
-
-    # Disable all row/column banding explicitly
-    look = OxmlElement("w:tblLook")
-    for attr, val in [("w:firstRow","1"),("w:lastRow","0"),
-                      ("w:firstColumn","0"),("w:lastColumn","0"),
-                      ("w:noHBand","1"),("w:noVBand","1")]:
-        look.set(qn(attr), val)
-    tblPr.append(look)
-
-    # ── Full-width table with single-line borders ──────────────────────────────
     tblBorders = tblPr.first_child_found_in("w:tblBorders")
     if tblBorders is None:
         tblBorders = OxmlElement("w:tblBorders")
         tblPr.append(tblBorders)
-    for side in ["top", "left", "bottom", "right", "insideH", "insideV"]:
-        b = OxmlElement(f"w:{side}")
-        b.set(qn("w:val"), "single")
-        b.set(qn("w:sz"), "4")
-        b.set(qn("w:space"), "0")
-        b.set(qn("w:color"), "000000")
-        tblBorders.append(b)
-
+    for border_name in ["top", "left", "bottom", "right", "insideH", "insideV"]:
+        border = OxmlElement(f"w:{border_name}")
+        border.set(qn("w:val"), "single")
+        border.set(qn("w:sz"), "4")
+        border.set(qn("w:space"), "0")
+        border.set(qn("w:color"), "auto")
+        tblBorders.append(border)
     tblW = tblPr.find(qn("w:tblW"))
     if tblW is None:
         tblW = OxmlElement("w:tblW")
@@ -152,64 +137,51 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
     tblW.set(qn("w:type"), "pct")
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-    # ── Cell helpers ───────────────────────────────────────────────────────────
-
     def _set_row_height(row, height=800):
-        trPr = row._tr.get_or_add_trPr()
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
         trH = OxmlElement("w:trHeight")
         trH.set(qn("w:val"), str(height))
         trH.set(qn("w:hRule"), "atLeast")
         trPr.append(trH)
 
     def _keep_together(row):
-        trPr = row._tr.get_or_add_trPr()
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
         cs = OxmlElement("w:cantSplit")
         cs.set(qn("w:val"), "true")
         trPr.append(cs)
 
     def _vcenter(cell):
-        tcPr = cell._tc.get_or_add_tcPr()
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
         v = OxmlElement("w:vAlign")
         v.set(qn("w:val"), "center")
         tcPr.append(v)
 
     def _repeat_header(row):
-        trPr = row._tr.get_or_add_trPr()
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
         th = OxmlElement("w:tblHeader")
         th.set(qn("w:val"), "true")
         trPr.append(th)
 
-    def _cell_fill(cell, hex_color: str):
-        """Set cell background. Removes any existing shd first."""
-        tcPr = cell._tc.get_or_add_tcPr()
-        existing = tcPr.find(qn("w:shd"))
-        if existing is not None:
-            tcPr.remove(existing)
-        shd = OxmlElement("w:shd")
-        shd.set(qn("w:val"),   "clear")
-        shd.set(qn("w:color"), "auto")
-        shd.set(qn("w:fill"),  hex_color.upper())
-        tcPr.append(shd)
-
-    # ── Header row — black fill, white bold text ───────────────────────────────
+    # Header row
     headers = ["Asset ID", "Item", "Brand", "Model", "Serial No.", "Notes", "Sign"]
     header_row = table.rows[0]
     _set_row_height(header_row, 500)
     _repeat_header(header_row)
-    for cell in header_row.cells:
-        _cell_fill(cell, "000000")
-        _vcenter(cell)
     for i, text in enumerate(headers):
         cell = header_row.cells[i]
         cell.text = text
+        _vcenter(cell)
         for p in cell.paragraphs:
             p.alignment = WD_TABLE_ALIGNMENT.CENTER
             for run in p.runs:
                 run.font.bold = True
                 run.font.size = Pt(10)
-                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
-    # ── Data rows — plain white cells ─────────────────────────────────────────
+    # Data rows
     for row_data in rows:
         new_row = table.add_row()
         _set_row_height(new_row, 900)
@@ -221,28 +193,25 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
             row_data["model"],
             row_data["serial_number"],
             row_data["notes"],
-            "",
+            "",  # Signature blank
         ]
         for i, val in enumerate(vals):
             cell = new_row.cells[i]
-            _cell_fill(cell, "FFFFFF")
             cell.text = val
             _vcenter(cell)
             for p in cell.paragraphs:
                 p.alignment = WD_TABLE_ALIGNMENT.CENTER
                 for run in p.runs:
                     run.font.size = Pt(9)
-                    run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
                     if row_data.get("is_charger"):
-                        run.font.italic = True
+                        run.font.italic = True  # visually distinguish charger rows
 
-    # ── Empty signature rows ───────────────────────────────────────────────────
+    # 6 empty rows for extra signatures
     for _ in range(6):
         empty_row = table.add_row()
         _set_row_height(empty_row, 900)
         _keep_together(empty_row)
         for cell in empty_row.cells:
-            _cell_fill(cell, "FFFFFF")
             _vcenter(cell)
 
     context = {

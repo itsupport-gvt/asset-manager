@@ -1,11 +1,13 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell, safeStorage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path  = require('path');
 const fs    = require('fs');
 const net   = require('net');
 const { spawn, execSync } = require('child_process');
+const crypto = require('crypto');
+const msal   = require('@azure/msal-node');
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const APP_DATA_DIR = path.join(app.getPath('appData'), 'AssetManager');
@@ -38,6 +40,275 @@ let setupWindow  = null;
 let backendProc  = null;
 let backendPort  = 8000;
 
+// Per-launch secret token — passed to backend via env var, exposed via IPC
+const APP_SECRET_TOKEN = crypto.randomBytes(32).toString('hex');
+
+// MSAL state
+const MSAL_CACHE_FILE = path.join(APP_DATA_DIR, 'msal-cache.bin');
+let _msalApp     = null;
+let _msalAccount = null;
+let _msIdToken   = null;
+
+// Auto-sync state — Electron-driven loop that calls the local backend's
+// /api/sync/push and /api/sync/pull every AUTO_SYNC_INTERVAL_MS.
+const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;  // 60 minutes
+let _autoSyncTimer = null;
+
+// Default Auth Client ID — read from env or baked-in build config
+let _DEFAULT_AUTH_CLIENT_ID = (process.env.ASSET_AUTH_CLIENT_ID || '').trim();
+if (!_DEFAULT_AUTH_CLIENT_ID) {
+  try {
+    const buildCfg = require('./build-config.json');
+    _DEFAULT_AUTH_CLIENT_ID = (buildCfg.authClientId || '').trim();
+  } catch { /* build-config.json not present — ok in local dev */ }
+}
+
+// Bootstrap SharePoint path (bootstrap.json stores the file URL for new installs)
+const BOOTSTRAP_PATH = '/sites/root/drive/root:/Asset%20Manager/bootstrap.json';
+
+// UI settings (theme, etc.)
+const UI_SETTINGS_FILE = path.join(APP_DATA_DIR, 'ui-settings.json');
+
+function readUiSettings() {
+  try { return JSON.parse(fs.readFileSync(UI_SETTINGS_FILE, 'utf-8')); } catch { return {}; }
+}
+function writeUiSettings(patch) {
+  const current = readUiSettings();
+  const merged  = { ...current, ...patch };
+  fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+  fs.writeFileSync(UI_SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+}
+
+// ── MSAL helpers ──────────────────────────────────────────────────────────────
+
+function _createMsalCachePlugin() {
+  return {
+    beforeCacheAccess: async (ctx) => {
+      try {
+        if (!fs.existsSync(MSAL_CACHE_FILE)) return;
+        const raw  = fs.readFileSync(MSAL_CACHE_FILE);
+        const text = safeStorage.isEncryptionAvailable()
+          ? safeStorage.decryptString(raw)
+          : raw.toString('utf-8');
+        ctx.tokenCache.deserialize(text);
+      } catch { /* first run or corrupted — start fresh */ }
+    },
+    afterCacheAccess: async (ctx) => {
+      if (!ctx.cacheHasChanged) return;
+      try {
+        const text = ctx.tokenCache.serialize();
+        const data = safeStorage.isEncryptionAvailable()
+          ? safeStorage.encryptString(text)
+          : Buffer.from(text, 'utf-8');
+        fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+        fs.writeFileSync(MSAL_CACHE_FILE, data);
+      } catch (e) { console.error('[msal] cache write error:', e.message); }
+    },
+  };
+}
+
+function initMsal(config) {
+  const authClientId = (config && config.AUTH_CLIENT_ID) || _DEFAULT_AUTH_CLIENT_ID;
+  if (!authClientId) { _msalApp = null; return; }
+  // Always use 'organizations' (multi-tenant) — tenant is discovered from the ID token.
+  const authority = 'https://login.microsoftonline.com/organizations';
+  _msalApp = new msal.PublicClientApplication({
+    auth: { clientId: authClientId, authority },
+    cache: { cachePlugin: _createMsalCachePlugin() },
+    system: { loggerOptions: { logLevel: msal.LogLevel.Warning, piiLoggingEnabled: false } },
+  });
+  console.log(`[msal] initialised clientId=${authClientId.slice(0,8)}…`);
+}
+
+const _MSAL_SCOPES  = ['openid', 'profile', 'email', 'offline_access'];
+const _GRAPH_SCOPES = ['User.Read', 'Files.ReadWrite.All', 'Sites.ReadWrite.All'];
+const _ALL_SCOPES   = [..._MSAL_SCOPES, ..._GRAPH_SCOPES];
+
+async function msAcquireSilent() {
+  if (!_msalApp) return null;
+  try {
+    const accounts = await _msalApp.getTokenCache().getAllAccounts();
+    if (!accounts || accounts.length === 0) return null;
+    if (!_msalAccount && accounts.length > 1) return null;
+    const account = _msalAccount || accounts[0];
+    const result  = await _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account });
+    _msalAccount  = result.account;
+    _msIdToken    = result.idToken;
+    return result;
+  } catch (e) { console.error('[msal] silent acquire failed:', e.message); return null; }
+}
+
+async function msAcquireInteractive() {
+  if (!_msalApp) throw new Error('Auth not configured');
+  const result = await _msalApp.acquireTokenInteractive({
+    scopes: _ALL_SCOPES,
+    redirectUri: 'http://localhost',
+    openBrowser: async (url) => { await shell.openExternal(url); },
+    successTemplate: '<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2 style="color:#188038">Login successful!</h2><p>You can close this tab and return to Asset Manager.</p></body></html>',
+    errorTemplate:   '<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2 style="color:#d93025">Login failed</h2><p>{error}</p></body></html>',
+  });
+  _msalAccount = result.account;
+  _msIdToken   = result.idToken;
+  return result;
+}
+
+async function msAcquireGraphToken({ allowInteractive = true } = {}) {
+  if (!_msalApp) return null;
+  try {
+    const accounts = await _msalApp.getTokenCache().getAllAccounts();
+    if (accounts && accounts.length > 0 && (_msalAccount || accounts.length === 1)) {
+      const account = _msalAccount || accounts[0];
+      const result  = await _msalApp.acquireTokenSilent({ scopes: _GRAPH_SCOPES, account });
+      if (result && result.accessToken) return result.accessToken;
+    }
+  } catch (e) { console.error('[msal] silent graph token failed:', e.message); }
+  if (!allowInteractive) return null;
+  try {
+    const result = await _msalApp.acquireTokenInteractive({
+      scopes: _GRAPH_SCOPES, redirectUri: 'http://localhost',
+      openBrowser: async (url) => { await shell.openExternal(url); },
+      successTemplate: '<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2 style="color:#188038">SharePoint access granted</h2><p>You can close this tab and return to Asset Manager.</p></body></html>',
+      errorTemplate:   '<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2 style="color:#d93025">Consent failed</h2><p>{error}</p></body></html>',
+    });
+    if (result && result.account) _msalAccount = result.account;
+    return result ? result.accessToken : null;
+  } catch (e) { console.error('[msal] interactive graph token failed:', e.message); return null; }
+}
+
+function _msUserFromResult(result) {
+  if (!result) return null;
+  return {
+    name:  result.account.name             || '',
+    email: result.account.username         || '',
+    oid:   result.account.localAccountId   || '',
+    token: result.idToken                  || '',
+  };
+}
+
+// ── Bootstrap helpers ─────────────────────────────────────────────────────────
+
+async function fetchBootstrap() {
+  const token = await msAcquireGraphToken({ allowInteractive: false });
+  if (!token) return null;
+  try {
+    const httpsMod = require('https');
+    return await new Promise((resolve) => {
+      const req = httpsMod.request({
+        method: 'GET',
+        hostname: 'graph.microsoft.com',
+        path: `/v1.0${BOOTSTRAP_PATH}:/content`,
+        headers: { Authorization: `Bearer ${token}` },
+      }, (res) => {
+        if (res.statusCode === 404) { resolve(null); res.resume(); return; }
+        if (res.statusCode !== 200) {
+          console.log(`[bootstrap] fetch returned ${res.statusCode}`);
+          resolve(null); res.resume(); return;
+        }
+        let body = '';
+        res.setEncoding('utf-8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch { resolve(null); }
+        });
+      });
+      req.on('error', (e) => { console.log('[bootstrap] fetch error: ' + e.message); resolve(null); });
+      req.end();
+    });
+  } catch (e) {
+    console.log('[bootstrap] fetch threw: ' + e.message);
+    return null;
+  }
+}
+
+async function uploadBootstrap(bootstrap) {
+  const token = await msAcquireGraphToken({ allowInteractive: true });
+  if (!token) return { ok: false, error: 'No Graph token — sign in first' };
+  try {
+    const httpsMod = require('https');
+    const payload  = Buffer.from(JSON.stringify(bootstrap, null, 2), 'utf-8');
+    return await new Promise((resolve) => {
+      const req = httpsMod.request({
+        method: 'PUT',
+        hostname: 'graph.microsoft.com',
+        path: `/v1.0${BOOTSTRAP_PATH}:/content`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Content-Length': payload.length,
+        },
+      }, (res) => {
+        let body = '';
+        res.setEncoding('utf-8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve({ ok: true });
+          else { console.log(`[bootstrap] upload ${res.statusCode}: ${body}`); resolve({ ok: false, error: `HTTP ${res.statusCode}` }); }
+        });
+      });
+      req.on('error', (e) => resolve({ ok: false, error: e.message }));
+      req.write(payload);
+      req.end();
+    });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── Auto-sync loop ────────────────────────────────────────────────────────────
+
+async function runAutoSync() {
+  if (!_msalApp) return;  // auth not configured
+  // Silent-only — never trigger interactive consent during background sync.
+  const graphToken = await msAcquireGraphToken({ allowInteractive: false });
+  if (!graphToken) {
+    console.log('[autosync] skipped — no Graph token (silent acquire failed)');
+    return;
+  }
+  const baseUrl = `http://127.0.0.1:${backendPort}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-App-Token': APP_SECRET_TOKEN,
+    'X-MS-Graph-Token': graphToken,
+    'Authorization': `Bearer ${_msIdToken || ''}`,
+  };
+  const httpMod = require('http');
+  const postJson = (p) => new Promise((resolve) => {
+    const req = httpMod.request(`${baseUrl}${p}`, { method: 'POST', headers, timeout: 120000 }, (res) => {
+      let body = '';
+      res.setEncoding('utf-8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', (e) => resolve({ status: 0, body: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, body: 'timeout' }); });
+    req.end();
+  });
+  try {
+    const push = await postJson('/api/sync/push');
+    console.log(`[autosync] push HTTP ${push.status}`);
+    const pull = await postJson('/api/sync/pull');
+    console.log(`[autosync] pull HTTP ${pull.status}`);
+  } catch (e) {
+    console.log('[autosync] error: ' + e.message);
+  }
+}
+
+function startAutoSync() {
+  if (_autoSyncTimer) return;
+  _autoSyncTimer = setInterval(() => {
+    runAutoSync().catch((e) => console.log('[autosync] unhandled: ' + e.message));
+  }, AUTO_SYNC_INTERVAL_MS);
+  console.log(`[autosync] started (interval=${AUTO_SYNC_INTERVAL_MS / 1000}s)`);
+}
+
+function stopAutoSync() {
+  if (_autoSyncTimer) {
+    clearInterval(_autoSyncTimer);
+    _autoSyncTimer = null;
+    console.log('[autosync] stopped');
+  }
+}
+
 // ── Config helpers ────────────────────────────────────────────────────────────
 function readConfig() {
   try {
@@ -52,11 +323,9 @@ function writeConfig(cfg) {
 
 function writeEnvFromConfig(cfg) {
   const lines = [
-    `SHAREPOINT_TENANT_ID=${cfg.SHAREPOINT_TENANT_ID || ''}`,
-    `SHAREPOINT_CLIENT_ID=${cfg.SHAREPOINT_CLIENT_ID || ''}`,
-    `SHAREPOINT_CLIENT_SECRET=${cfg.SHAREPOINT_CLIENT_SECRET || ''}`,
     `SHAREPOINT_FILE_URL=${cfg.SHAREPOINT_FILE_URL || ''}`,
     `NGROK_URL=${cfg.NGROK_URL || ''}`,
+    `AUTH_CLIENT_ID=${cfg.AUTH_CLIENT_ID || _DEFAULT_AUTH_CLIENT_ID || ''}`,
   ];
   fs.writeFileSync(ENV_FILE, lines.join('\n') + '\n', 'utf8');
 }
@@ -118,38 +387,6 @@ function createSetupWindow() {
   setupWindow.on('closed', () => { setupWindow = null; });
 }
 
-// ── Main window ───────────────────────────────────────────────────────────────
-function createMainWindow(port) {
-  mainWindow = new BrowserWindow({
-    width: 1400, height: 900,
-    minWidth: 960, minHeight: 600,
-    title: 'Asset Manager',
-    show: false,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#161b22',
-      symbolColor: '#8b949e',
-      height: 48,
-    },
-    webPreferences: {
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-    },
-  });
-  mainWindow.loadURL(`http://127.0.0.1:${port}`);
-  mainWindow.once('ready-to-show', () => {
-    if (splashWindow && !splashWindow.isDestroyed()) { splashWindow.close(); splashWindow = null; }
-    mainWindow.show();
-    mainWindow.focus();
-  });
-  mainWindow.on('closed', () => { mainWindow = null; });
-
-  // Open external links in the system browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
-}
 
 // ── Spawn backend ─────────────────────────────────────────────────────────────
 function spawnBackend(port) {
@@ -163,6 +400,7 @@ function spawnBackend(port) {
     PORT: String(port),
     ASSET_DATA_DIR: APP_DATA_DIR,
     PYTHONUNBUFFERED: '1',
+    APP_SECRET_TOKEN: APP_SECRET_TOKEN,
   };
 
   // If syncFrontend() copied files, tell backend to serve from there
@@ -269,13 +507,15 @@ ipcMain.handle('check-for-updates', async () => {
 });
 
 ipcMain.handle('set-theme', (_, theme) => {
+  writeUiSettings({ theme });
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setTitleBarOverlay({
-      color:       theme === 'light' ? '#ffffff' : '#161b22',
-      symbolColor: theme === 'light' ? '#57606a' : '#8b949e',
-      height: 48,
+      color:       theme === 'light' ? '#ffffff' : '#131316',
+      symbolColor: theme === 'light' ? '#5f6368' : '#e8eaed',
+      height: 56,
     });
   }
+  return { ok: true };
 });
 
 ipcMain.handle('show-about', () => {
@@ -287,8 +527,90 @@ ipcMain.handle('show-about', () => {
   });
 });
 
+ipcMain.handle('get-app-token', () => APP_SECRET_TOKEN);
+ipcMain.handle('get-theme', () => readUiSettings().theme || 'dark');
+
+ipcMain.handle('fetch-bootstrap', async () => {
+  return await fetchBootstrap();
+});
+
+ipcMain.handle('upload-bootstrap', async (_, bootstrap) => {
+  return await uploadBootstrap(bootstrap);
+});
+
+ipcMain.handle('init-msal', (_, { authClientId }) => {
+  if (!authClientId) return { ok: false, error: 'Auth Client ID required' };
+  initMsal({ AUTH_CLIENT_ID: authClientId, SHAREPOINT_TENANT_ID: '' });
+  return { ok: _msalApp !== null };
+});
+
+ipcMain.handle('ms-login', async () => {
+  try {
+    const result = await msAcquireInteractive();
+    return { ok: true, user: _msUserFromResult(result) };
+  } catch (e) {
+    console.error('[msal] login error:', e.message);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('ms-logout', async () => {
+  _msalAccount = null;
+  _msIdToken   = null;
+  try { if (fs.existsSync(MSAL_CACHE_FILE)) fs.unlinkSync(MSAL_CACHE_FILE); } catch {}
+  return { ok: true };
+});
+
+ipcMain.handle('get-ms-user', async () => {
+  if (!_msalAccount) {
+    const result = await msAcquireSilent();
+    if (result) return _msUserFromResult(result);
+    return null;
+  }
+  return _msIdToken ? {
+    name:  _msalAccount.name             || '',
+    email: _msalAccount.username         || '',
+    oid:   _msalAccount.localAccountId   || '',
+    token: _msIdToken,
+  } : null;
+});
+
+ipcMain.handle('get-ms-token', async () => {
+  const result = await msAcquireSilent();
+  return result ? result.idToken : null;
+});
+
+ipcMain.handle('get-ms-graph-token', async () => {
+  return await msAcquireGraphToken();
+});
+
+ipcMain.handle('get-cached-accounts', async () => {
+  if (!_msalApp) return [];
+  try {
+    const accounts = await _msalApp.getTokenCache().getAllAccounts();
+    return (accounts || []).map(a => ({
+      homeAccountId: a.homeAccountId,
+      name:  a.name     || '',
+      email: a.username || '',
+    }));
+  } catch { return []; }
+});
+
+ipcMain.handle('select-account', async (_, homeAccountId) => {
+  if (!_msalApp) return { ok: false, error: 'Auth not configured' };
+  try {
+    const accounts = await _msalApp.getTokenCache().getAllAccounts();
+    const account  = (accounts || []).find(a => a.homeAccountId === homeAccountId);
+    if (!account) return { ok: false, error: 'Account not found' };
+    const result = await _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account });
+    _msalAccount = result.account;
+    _msIdToken   = result.idToken;
+    return { ok: true, user: _msUserFromResult(result) };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
 // ── Main launch sequence ──────────────────────────────────────────────────────
-async function launchApp() {
+async function launchApp(initialPath = '') {
   try { execSync('taskkill /IM asset-backend.exe /T /F', { stdio: 'ignore' }); } catch {}
   syncFrontend();
 
@@ -297,14 +619,51 @@ async function launchApp() {
   try {
     backendPort = await findFreePort(8000);
     const cfg = readConfig();
-    if (cfg) writeEnvFromConfig(cfg);
+    if (cfg) {
+      writeEnvFromConfig(cfg);
+      initMsal(cfg);
+    }
     spawnBackend(backendPort);
 
     // In dev mode the backend is already running on 8000
     const targetPort = app.isPackaged ? backendPort : 8000;
     await pollBackendReady(targetPort, 30000);
 
-    createMainWindow(targetPort);
+    const url = `http://127.0.0.1:${targetPort}${initialPath}`;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(url);
+    } else {
+      mainWindow = new BrowserWindow({
+        width: 1400, height: 900,
+        minWidth: 960, minHeight: 600,
+        title: 'Asset Manager',
+        show: false,
+        titleBarStyle: 'hidden',
+        titleBarOverlay: {
+          color:       readUiSettings().theme === 'light' ? '#ffffff' : '#131316',
+          symbolColor: readUiSettings().theme === 'light' ? '#5f6368' : '#e8eaed',
+          height: 56,
+        },
+        webPreferences: {
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.js'),
+        },
+      });
+      mainWindow.loadURL(url);
+      mainWindow.once('ready-to-show', () => {
+        if (splashWindow && !splashWindow.isDestroyed()) { splashWindow.close(); splashWindow = null; }
+        mainWindow.show();
+        mainWindow.focus();
+      });
+      mainWindow.on('closed', () => { mainWindow = null; });
+      mainWindow.webContents.setWindowOpenHandler(({ url: u }) => {
+        shell.openExternal(u);
+        return { action: 'deny' };
+      });
+    }
+
+    if (splashWindow && !splashWindow.isDestroyed()) { splashWindow.close(); splashWindow = null; }
+    startAutoSync();
     autoUpdater.checkForUpdatesAndNotify().catch(() => {});
   } catch (err) {
     if (splashWindow && !splashWindow.isDestroyed()) splashWindow.close();
@@ -316,13 +675,37 @@ async function launchApp() {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   buildMenu();
-  const cfg = readConfig();
-  if (!cfg || !cfg.SHAREPOINT_TENANT_ID) {
-    // First run — show setup screen
-    createSetupWindow();
-  } else {
-    await launchApp();
+  let cfg = readConfig();
+
+  if (!cfg || !cfg.SHAREPOINT_FILE_URL) {
+    // First run (or missing FILE_URL) — try bootstrap from SharePoint before
+    // showing the onboarding page.
+    if (_DEFAULT_AUTH_CLIENT_ID) {
+      initMsal({ AUTH_CLIENT_ID: _DEFAULT_AUTH_CLIENT_ID });
+      // Attempt silent sign-in in case this user has a cached session.
+      const silent = await msAcquireSilent();
+      if (silent) {
+        console.log('[bootstrap] silent acquire succeeded — fetching bootstrap.json');
+        const bs = await fetchBootstrap();
+        if (bs && bs.fileUrl) {
+          cfg = { SHAREPOINT_FILE_URL: bs.fileUrl, AUTH_CLIENT_ID: _DEFAULT_AUTH_CLIENT_ID, NGROK_URL: '' };
+          writeConfig(cfg);
+          console.log('[bootstrap] config auto-written from SharePoint bootstrap');
+        }
+      }
+    }
+
+    if (!cfg || !cfg.SHAREPOINT_FILE_URL) {
+      // Bootstrap not found — write a minimal env so the backend can start,
+      // then load the onboarding React page.
+      const minimal = { SHAREPOINT_FILE_URL: '', AUTH_CLIENT_ID: _DEFAULT_AUTH_CLIENT_ID, NGROK_URL: '' };
+      writeEnvFromConfig(minimal);
+      await launchApp('/onboarding');
+      return;
+    }
   }
+
+  await launchApp();
 });
 
 app.on('window-all-closed', () => {
@@ -330,6 +713,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  stopAutoSync();
   killBackend();
 });
 
@@ -338,8 +722,15 @@ app.on('activate', () => {
 });
 
 // ── Auto-updater events ───────────────────────────────────────────────────────
-autoUpdater.on('update-available', () => {
-  dialog.showMessageBox({ type: 'info', title: 'Update available', message: 'A new version is being downloaded…' });
+autoUpdater.on('update-available', (info) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-available', { version: info.version });
+  }
+});
+autoUpdater.on('update-not-available', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-not-available');
+  }
 });
 
 autoUpdater.on('update-downloaded', () => {

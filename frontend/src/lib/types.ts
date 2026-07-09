@@ -174,6 +174,19 @@ export interface ActivityLogPage {
     items: ActivityLogItem[];
 }
 
+// ── Auth Users ───────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  oid: string;
+  name: string;
+  email: string;
+  entra_roles: string[];
+  effective_role: string;
+  is_active: boolean;
+  last_login: string;
+  created_at: string;
+}
+
 // Scanner Context Payload
 export interface ScanPayload {
     mode: 'context_action' | 'asset_qr' | 'field_scan';

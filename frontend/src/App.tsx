@@ -1,7 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { useScanner, ScannerContext } from './lib/scanner';
 import type { ScanPayload } from './lib/types';
+import { api } from './lib/api';
+import { AuthProvider, useAuth } from './lib/auth';
+import LoginPage from './pages/LoginPage';
 import { BrowsePage } from './pages/BrowsePage';
 import { AssetDetailPage } from './pages/AssetDetailPage';
 import { AssignPage } from './pages/AssignPage';
@@ -16,44 +19,454 @@ import { DocumentsPage } from './pages/DocumentsPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { SwapPage } from './pages/SwapPage';
 
-// ── Electron IPC bridge (safe fallback for non-Electron / dev) ────────────────
+const isElectron = typeof window !== 'undefined' && !!(window as Window & { assetManager?: unknown }).assetManager
+const H_HEIGHT = 56
+
+// ── Electron IPC bridge ───────────────────────────────────────────────────────
 const ipc = (window as any).assetManager ?? {};
 
-// ── Quick Lookup ──────────────────────────────────────────────────────────────
-function QuickLookup() {
-  const [q, setQ] = useState('');
-  const nav = useNavigate();
+// ── Toast system ──────────────────────────────────────────────────────────────
 
-  function go() {
-    const id = q.trim();
-    if (!id) return;
-    nav(`/asset/${encodeURIComponent(id)}`);
-    setQ('');
+type ToastType = 'success' | 'error' | 'info'
+interface Toast { id: number; type: ToastType; message: string }
+interface ToastContextValue { showToast: (message: string, type?: ToastType) => void }
+
+const ToastContext = createContext<ToastContextValue>({ showToast: () => {} })
+export function useToast() { return useContext(ToastContext) }
+let toastCounter = 0
+
+function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  if (toasts.length === 0) return null
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: 24, zIndex: 9999,
+      display: 'flex', flexDirection: 'column-reverse', gap: 8, maxWidth: 420,
+    }}>
+      {toasts.map((t) => (
+        <div key={t.id} className="animate-in" style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px',
+          borderRadius: 8,
+          background: '#3c4043',
+          color: '#fff',
+          fontSize: 14,
+          fontFamily: "'Google Sans', sans-serif",
+          fontWeight: 400,
+          minHeight: 48,
+        }}>
+          <span className="icon icon-sm" style={{
+            color: t.type === 'success' ? '#81c995' : t.type === 'error' ? '#f28b82' : '#8ab4f8',
+          }}>
+            {t.type === 'success' ? 'check_circle' : t.type === 'error' ? 'error' : 'info'}
+          </span>
+          <span style={{ flex: 1 }}>{t.message}</span>
+          <button
+            onClick={() => onDismiss(t.id)}
+            style={{
+              background: 'none', border: 'none', color: '#bdc1c6',
+              cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center',
+              borderRadius: 4,
+            }}
+          >
+            <span className="icon icon-sm">close</span>
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Sync button ───────────────────────────────────────────────────────────────
+
+function SyncButton({ showToast }: { showToast: (msg: string, type?: ToastType) => void }) {
+  const [open, setOpen]       = useState(false)
+  const [pending, setPending] = useState(0)
+  const [busy, setBusy]       = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const load = () => api.getSyncStatus().then(s => setPending(s.pending_changes)).catch(() => {})
+    load()
+    const t = setInterval(load, 60_000)
+    document.addEventListener('sync-status-changed', load)
+    return () => { clearInterval(t); document.removeEventListener('sync-status-changed', load) }
+  }, [])
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  async function doSync(action: 'push' | 'pull') {
+    setBusy(true); setOpen(false)
+    try {
+      if (action === 'push') {
+        const r = await api.pushToExcel()
+        showToast(r.message || 'Pushed to SharePoint', 'success')
+      } else {
+        await fetch('/api/sync/pull', { method: 'POST', headers: await _tokenHeaders() })
+        showToast('Pulled from SharePoint', 'success')
+      }
+      const s = await api.getSyncStatus(); setPending(s.pending_changes)
+      document.dispatchEvent(new CustomEvent('sync-status-changed'))
+    } catch (err) { showToast(err instanceof Error ? err.message : 'Sync failed', 'error') }
+    finally { setBusy(false) }
+  }
+
+  const synced = pending === 0
+  const icon   = busy ? 'sync' : (synced ? 'cloud_done' : 'cloud_upload')
+  const label  = busy ? 'Syncing' : synced ? 'Synced' : `${pending} pending`
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={busy}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, height: 36,
+          padding: '0 12px',
+          border: 'none',
+          borderRadius: 18,
+          background: 'transparent',
+          color: synced ? 'var(--text-2)' : 'var(--warn)',
+          fontSize: 13,
+          fontFamily: "'Google Sans', sans-serif", fontWeight: 500,
+          cursor: 'pointer',
+          transition: 'background-color .12s',
+          whiteSpace: 'nowrap',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--h-hover-bg)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      >
+        <span className="icon icon-sm" style={{ animation: busy ? 'spin .8s linear infinite' : 'none' }}>{icon}</span>
+        {label}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 6px)', minWidth: 200, zIndex: 200,
+          background: 'var(--h-dropdown-bg)', border: '1px solid var(--h-dropdown-bdr)',
+          borderRadius: 8, boxShadow: 'var(--shadow-2)', overflow: 'hidden',
+          padding: '6px 0',
+        }}>
+          {[
+            { label: 'Push to SharePoint', icon: 'upload',   action: 'push' as const },
+            { label: 'Pull from SharePoint', icon: 'download', action: 'pull' as const },
+          ].map(item => (
+            <button key={item.action} onClick={() => doSync(item.action)} style={{
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+              padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer',
+              fontSize: 14, color: 'var(--h-dropdown-text)', textAlign: 'left',
+              fontFamily: "'Google Sans', sans-serif",
+            }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--h-dropdown-hover)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+            >
+              <span className="icon icon-sm" style={{ color: 'var(--text-2)' }}>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+async function _tokenHeaders(): Promise<Record<string, string>> {
+  const h: Record<string, string> = {}
+  try {
+    const win = window as Window & { assetManager?: { getAppToken?: () => Promise<string>; getMsToken?: () => Promise<string | null> } }
+    const app = await win.assetManager?.getAppToken?.()
+    const ms  = await win.assetManager?.getMsToken?.()
+    if (app) h['X-App-Token']   = app
+    if (ms)  h['Authorization'] = `Bearer ${ms}`
+  } catch { /* ignore */ }
+  return h
+}
+
+// ── Shortcuts help modal ──────────────────────────────────────────────────────
+
+const KBD_STYLE: React.CSSProperties = {
+  display: 'inline-block', fontFamily: 'monospace', fontSize: 11,
+  padding: '2px 7px', borderRadius: 4,
+  background: 'var(--surface-3)', border: '1px solid var(--border)',
+  color: 'var(--text-1)', whiteSpace: 'nowrap',
+}
+
+type ShortcutRow = { keys: string | string[]; action: string; scope: string }
+
+function Kbd({ k }: { k: string | string[] }) {
+  const keys = Array.isArray(k) ? k : [k]
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      {keys.map((key, i) => (
+        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {i > 0 && <span style={{ fontSize: 11, color: 'var(--text-3)' }}>then</span>}
+          <kbd style={KBD_STYLE}>{key}</kbd>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function ShortcutsModal({ onClose, isAdmin, canCreate }: { onClose: () => void; isAdmin: boolean; canCreate: boolean }) {
+  useEffect(() => {
+    const h = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const groups: { heading: string; rows: ShortcutRow[] }[] = [
+    {
+      heading: 'Navigation',
+      rows: [
+        { keys: ['G', 'D'], action: 'Dashboard',     scope: 'Global' },
+        { keys: ['G', 'A'], action: 'Browse assets', scope: 'Global' },
+        { keys: ['G', 'E'], action: 'Employees',     scope: 'Global' },
+        { keys: ['G', 'L'], action: 'Activity log',  scope: 'Global' },
+        { keys: ['G', 'R'], action: 'Reports',       scope: 'Global' },
+        ...(isAdmin ? [
+          { keys: ['G', 'U'] as string[], action: 'Users',    scope: 'Global · Admin' },
+          { keys: ['G', 'S'] as string[], action: 'Settings', scope: 'Global · Admin' },
+        ] : []),
+      ],
+    },
+    {
+      heading: 'Search',
+      rows: [
+        { keys: '/', action: 'Focus asset search', scope: 'Global' },
+      ],
+    },
+    {
+      heading: 'Actions',
+      rows: [
+        ...(canCreate ? [{ keys: 'Ctrl + N', action: 'New asset', scope: 'Global' }] : []),
+        { keys: 'Ctrl + S', action: 'Save form', scope: 'Forms' },
+        { keys: '?',        action: 'Toggle this help panel', scope: 'Global' },
+        ...(isAdmin ? [{ keys: 'Ctrl + `', action: 'Toggle server log panel', scope: 'Global · Admin' }] : []),
+      ],
+    },
+  ]
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: 'var(--surface)', borderRadius: 16, padding: '28px 32px', maxWidth: 560, width: '90%', boxShadow: 'var(--shadow-2)', maxHeight: '80vh', overflowY: 'auto' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 500, color: 'var(--text-1)', fontFamily: "'Google Sans', sans-serif" }}>Keyboard shortcuts</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', display: 'flex', padding: 4, borderRadius: 4 }}>
+            <span className="icon icon-sm">close</span>
+          </button>
+        </div>
+
+        {groups.map(g => (
+          <div key={g.heading} style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>{g.heading}</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <tbody>
+                {g.rows.map((r, i) => (
+                  <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '8px 0', width: 160 }}><Kbd k={r.keys} /></td>
+                    <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text-1)' }}>{r.action}</td>
+                    <td style={{ padding: '8px 0', fontSize: 12, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{r.scope}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
+          Navigation uses a two-key sequence: press <kbd style={KBD_STYLE}>G</kbd> then the letter within 800 ms. Disabled when focus is in a text field.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Admin log panel ───────────────────────────────────────────────────────────
+
+function LogPanel({ onClose }: { onClose: () => void }) {
+  const [lines, setLines]   = useState<string[]>([])
+  const [paused, setPaused] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const poll = () => {
+      api.getAdminLogs(300)
+        .then(d => { if (!paused) setLines(d.lines) })
+        .catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 2000)
+    return () => clearInterval(id)
+  }, [paused])
+
+  useEffect(() => {
+    if (!paused) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [lines, paused])
+
+  function lineColor(line: string): string {
+    if (/ ERROR /.test(line)) return '#f28b82'
+    if (/ WARNING /.test(line)) return '#fdd663'
+    return 'var(--text-2)'
   }
 
   return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <span className="icon" style={{ position: 'absolute', left: 9, fontSize: 15, color: 'var(--text-3)', pointerEvents: 'none', zIndex: 1 }}>search</span>
-      <input
-        type="text" value={q}
-        onChange={e => setQ(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && go()}
-        placeholder="Asset ID…"
-        className="md-input"
-        style={{ borderRadius: 6, paddingLeft: 30, paddingRight: 10, height: 32, width: 148, fontSize: 12 }}
-      />
+    <div style={{
+      position: 'fixed', bottom: 0, left: 0, right: 0, height: 260, zIndex: 200,
+      background: 'var(--surface)', borderTop: '2px solid var(--border)',
+      display: 'flex', flexDirection: 'column',
+      boxShadow: '0 -4px 24px rgba(0,0,0,.12)',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '4px 12px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)',
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', fontFamily: 'monospace', letterSpacing: 1, textTransform: 'uppercase' }}>Server Logs</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <button title={paused ? 'Resume' : 'Pause'} onClick={() => setPaused(p => !p)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, borderRadius: 4, display: 'flex' }}>
+            <span className="icon icon-sm">{paused ? 'play_arrow' : 'pause'}</span>
+          </button>
+          <button title="Clear" onClick={() => setLines([])}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, borderRadius: 4, display: 'flex' }}>
+            <span className="icon icon-sm">delete_sweep</span>
+          </button>
+          <button title="Close" onClick={onClose}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 4, borderRadius: 4, display: 'flex' }}>
+            <span className="icon icon-sm">close</span>
+          </button>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px', fontFamily: 'monospace', fontSize: 11.5, lineHeight: 1.55 }}>
+        {lines.length === 0
+          ? <span style={{ color: 'var(--text-3)' }}>No log entries yet…</span>
+          : lines.map((line, i) => (
+            <div key={i} style={{ color: lineColor(line), whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{line}</div>
+          ))
+        }
+        <div ref={bottomRef} />
+      </div>
     </div>
-  );
+  )
+}
+
+// ── Icon button ───────────────────────────────────────────────────────────────
+
+function HeaderIconBtn({ icon, title, onClick }: { icon: string; title: string; onClick: () => void }) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: 36, height: 36, borderRadius: 18, border: 'none',
+        background: 'transparent', color: 'var(--text-2)',
+        cursor: 'pointer', transition: 'background-color .12s', flexShrink: 0,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--h-hover-bg)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      <span className="icon icon-sm">{icon}</span>
+    </button>
+  )
+}
+
+// ── User menu ─────────────────────────────────────────────────────────────────
+
+function UserMenu() {
+  const { user, authEnabled, logout } = useAuth()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  if (!authEnabled || !user) return null
+
+  const initials = (user.name || user.email || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={`${user.name} (${user.role})`}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'var(--primary)', color: 'var(--on-primary)',
+          cursor: 'pointer', border: 'none',
+          fontSize: 12, fontFamily: "'Google Sans', sans-serif", fontWeight: 500,
+          flexShrink: 0,
+        }}
+      >
+        {initials}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', right: 0, top: 'calc(100% + 8px)', minWidth: 260, zIndex: 200,
+          background: 'var(--h-dropdown-bg)', border: '1px solid var(--h-dropdown-bdr)',
+          borderRadius: 12, boxShadow: 'var(--shadow-2)', overflow: 'hidden',
+        }}>
+          <div style={{ padding: '20px 16px', textAlign: 'center', borderBottom: '1px solid var(--h-dropdown-bdr)' }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'var(--primary)', color: 'var(--on-primary)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22, fontWeight: 500, fontFamily: "'Google Sans', sans-serif",
+              margin: '0 auto 12px',
+            }}>{initials}</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text-1)' }}>{user.name || user.email}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{user.email}</div>
+            <div style={{
+              marginTop: 10, display: 'inline-flex', alignItems: 'center',
+              padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 500,
+              background: 'var(--surface-3)', color: 'var(--text-2)',
+            }}>
+              {user.role}
+            </div>
+          </div>
+          <button
+            onClick={async () => { setOpen(false); await logout() }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+              padding: '12px 16px', border: 'none', background: 'none',
+              color: 'var(--h-dropdown-text)', cursor: 'pointer', fontSize: 14,
+              fontFamily: "'Google Sans', sans-serif",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--h-dropdown-hover)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+          >
+            <span className="icon icon-sm" style={{ color: 'var(--text-2)' }}>logout</span>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Scanner QR Modal ──────────────────────────────────────────────────────────
+
 function ScannerQRButton({ connected }: { connected: boolean }) {
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState('');
+  const [open, setOpen]     = useState(false);
+  const [url, setUrl]       = useState('');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch('/api/scanner-url').then(r => r.json()).then(d => setUrl(d.url)).catch(() => { });
+    fetch('/api/scanner-url').then(r => r.json()).then(d => setUrl(d.url)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -67,34 +480,32 @@ function ScannerQRButton({ connected }: { connected: boolean }) {
     <>
       <button
         onClick={() => { setOpen(true); setLoaded(false); }}
-        className="md-btn"
-        style={{
-          padding: '5px 9px', fontSize: 12, gap: 0,
-          background: connected ? 'rgba(63,185,80,.12)' : 'var(--surface-2)',
-          color: connected ? 'var(--success)' : 'var(--text-2)',
-          border: `1px solid ${connected ? 'rgba(63,185,80,.25)' : 'var(--border)'}`,
-          borderRadius: 6, minWidth: 0,
-        }}
         title={connected ? 'Scanner connected' : 'Open Mobile Scanner'}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 36, height: 36, borderRadius: 18, border: 'none',
+          background: connected ? 'rgba(129,201,149,.15)' : 'transparent',
+          color: connected ? 'var(--success)' : 'var(--text-2)',
+          cursor: 'pointer', transition: 'background-color .12s', flexShrink: 0,
+        }}
+        onMouseEnter={e => { if (!connected) e.currentTarget.style.background = 'var(--h-hover-bg)' }}
+        onMouseLeave={e => { if (!connected) e.currentTarget.style.background = 'transparent' }}
       >
-        <span className="icon" style={{ fontSize: 17 }}>{connected ? 'qr_code_scanner' : 'qr_code'}</span>
+        <span className="icon icon-sm">{connected ? 'qr_code_scanner' : 'qr_code'}</span>
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(6px)', zIndex: 9999 }}
+          style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(0,0,0,.75)', backdropFilter: 'blur(6px)', zIndex: 9999 }}
           onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}
         >
-          <div className="md-card p-8 w-full max-w-sm flex flex-col items-center gap-5" style={{ borderRadius: 14 }}>
-            <div className="w-full flex items-center justify-between">
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 32, width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-1)' }}>Mobile Scanner</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>Scan to open on your phone</p>
+                <div style={{ fontWeight: 600, fontSize: 17, color: 'var(--text-1)' }}>Mobile Scanner</div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>Scan to open on your phone</div>
               </div>
-              <button onClick={() => setOpen(false)} className="md-btn" style={{ padding: 7, borderRadius: 8, background: 'var(--surface-2)', color: 'var(--text-2)', minWidth: 0 }}>
-                <span className="icon">close</span>
-              </button>
+              <HeaderIconBtn icon="close" title="Close" onClick={() => setOpen(false)} />
             </div>
             <div style={{ borderRadius: 10, overflow: 'hidden', background: '#fff', padding: 8, width: 216, height: 216, position: 'relative' }}>
               {!loaded && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#666' }}>Generating…</div>}
@@ -118,219 +529,165 @@ function ScannerQRButton({ connected }: { connected: boolean }) {
   );
 }
 
-// ── Nav Link ──────────────────────────────────────────────────────────────────
-function NavLink({ to, icon, label }: { to: string; icon: string; label: string }) {
-  const loc = useLocation();
-  const active = loc.pathname === to || (to !== '/' && loc.pathname.startsWith(to.split('/:')[0]));
-  return (
-    <Link to={to} title={label} style={{
-      display: 'flex', alignItems: 'center', gap: 5,
-      padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: active ? 600 : 400,
-      color: active ? 'var(--primary)' : 'var(--text-2)',
-      background: active ? 'var(--primary-bg)' : 'transparent',
-      textDecoration: 'none', transition: 'background .12s, color .12s',
-      whiteSpace: 'nowrap', border: active ? '1px solid rgba(88,166,255,.2)' : '1px solid transparent',
-    }}>
-      <span className="icon" style={{ fontSize: 15 }}>{icon}</span>
-      {label}
-    </Link>
-  );
-}
+// ── Nav items ──────────────────────────────────────────────────────────────────
 
-// ── Sync Button ───────────────────────────────────────────────────────────────
-function SyncButton() {
-  const [syncing, setSyncing] = useState(false);
-  const [pendingCount, setPending] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
+type NavItem = { to: string; end?: boolean; label: string; icon: string }
 
-  const fetchStatus = useCallback(() => {
-    fetch('/api/sync/status').then(r => r.json()).then(d => setPending(d.pending_changes || 0)).catch(() => { });
-  }, []);
+const NAV: NavItem[] = [
+  { to: '/',          end: true, label: 'Browse',    icon: 'grid_view'   },
+  { to: '/dashboard',            label: 'Dashboard', icon: 'dashboard'   },
+  { to: '/employees',            label: 'People',    icon: 'group'       },
+  { to: '/documents',            label: 'Reports',   icon: 'description' },
+  { to: '/activity',             label: 'Activity',  icon: 'history'     },
+]
 
-  useEffect(() => { fetchStatus(); const iv = setInterval(fetchStatus, 5000); return () => clearInterval(iv); }, [fetchStatus]);
+const NAV_ADMIN: NavItem[] = [
+  { to: '/users',    label: 'Users',    icon: 'manage_accounts' },
+  { to: '/settings', label: 'Settings', icon: 'settings'        },
+]
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+// ── App ────────────────────────────────────────────────────────────────────────
 
-  async function push() {
-    setSyncing(true); setOpen(false); setStatus('Pushing…');
-    try { await fetch('/api/sync/push', { method: 'POST' }); setStatus('Pushed ✓'); fetchStatus(); }
-    catch { setStatus('Failed'); }
-    setSyncing(false); setTimeout(() => setStatus(''), 3000);
-  }
-
-  async function pull() {
-    setSyncing(true); setOpen(false); setStatus('Syncing…');
-    try { await fetch('/api/sync/pull', { method: 'POST' }); setStatus('Synced ✓'); fetchStatus(); }
-    catch { setStatus('Failed'); }
-    setSyncing(false); setTimeout(() => setStatus(''), 3000);
-  }
-
-  async function pullLogs() {
-    setSyncing(true); setOpen(false); setStatus('Importing…');
-    try {
-      const r = await fetch('/api/sync/pull-logs', { method: 'POST' });
-      const d = await r.json();
-      setStatus(d.success ? `+${d.imported} logs` : 'Failed');
-      fetchStatus();
-    } catch { setStatus('Failed'); }
-    setSyncing(false); setTimeout(() => setStatus(''), 4000);
-  }
-
-  const hasPending = pendingCount > 0;
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        disabled={syncing}
-        className="md-btn"
-        style={{
-          padding: '5px 10px', fontSize: 12, gap: 5, borderRadius: 6,
-          background: syncing ? 'var(--surface-2)' : hasPending ? 'rgba(210,153,34,.12)' : 'var(--surface-2)',
-          color: syncing ? 'var(--text-2)' : hasPending ? 'var(--warn)' : 'var(--success)',
-          border: `1px solid ${hasPending ? 'rgba(210,153,34,.3)' : 'var(--border)'}`,
-        }}
-        title="Sync options"
-      >
-        <span className="icon" style={{ fontSize: 15, animation: syncing ? 'spin 1s linear infinite' : 'none' }}>
-          {syncing ? 'sync' : hasPending ? 'cloud_upload' : 'cloud_done'}
-        </span>
-        <span style={{ fontSize: 11 }}>
-          {status || (syncing ? 'Working…' : hasPending ? `${pendingCount} pending` : 'Synced')}
-        </span>
-        <span className="icon" style={{ fontSize: 13, color: 'var(--text-3)' }}>expand_more</span>
-      </button>
-
-      {open && (
-        <div className="md-card" style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 196,
-          zIndex: 999, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
-        }}>
-          <button onClick={push} style={menuItemStyle(hasPending)}>
-            <span className="icon icon-sm">cloud_upload</span>
-            <span>Push to Excel {hasPending && <span style={{ marginLeft: 5, fontSize: 10, background: 'var(--warn)', color: '#000', padding: '1px 5px', borderRadius: 8, fontWeight: 600 }}>{pendingCount}</span>}</span>
-          </button>
-          <button onClick={pull} style={menuItemStyle(false)}>
-            <span className="icon icon-sm">cloud_download</span>
-            Pull from Excel
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function menuItemStyle(highlight: boolean): React.CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px',
-    background: 'none', border: 'none', borderRadius: 5, cursor: 'pointer',
-    color: highlight ? 'var(--warn)' : 'var(--text-1)',
-    textAlign: 'left', width: '100%', fontWeight: highlight ? 600 : 400, fontSize: 12,
-  };
-}
-
-// ── App Menu (gear / settings / theme) ───────────────────────────────────────
-function AppMenu({ theme, onToggleTheme }: { theme: 'dark' | 'light'; onToggleTheme: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [version, setVersion] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    ipc.getAppVersion?.().then((v: string) => setVersion(v)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="md-btn"
-        title="Settings & more"
-        style={{ padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid transparent', color: 'var(--text-2)', minWidth: 0 }}
-      >
-        <span className="icon" style={{ fontSize: 17 }}>settings</span>
-      </button>
-
-      {open && (
-        <div className="md-card animate-in" style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 220,
-          zIndex: 999, padding: 4, display: 'flex', flexDirection: 'column', gap: 1,
-        }}>
-          {/* Theme toggle */}
-          <button onClick={() => { onToggleTheme(); setOpen(false); }} style={menuItemStyle(false)}>
-            <span className="icon icon-sm">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-            Switch to {theme === 'dark' ? 'Light' : 'Dark'} Theme
-          </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
-          <button onClick={() => { setOpen(false); ipc.openSettings?.(); }} style={menuItemStyle(false)}>
-            <span className="icon icon-sm">tune</span> Connections & Setup
-          </button>
-          <button onClick={() => { setOpen(false); ipc.checkForUpdates?.(); }} style={menuItemStyle(false)}>
-            <span className="icon icon-sm">system_update</span> Check for Updates
-          </button>
-          <div style={{ height: 1, background: 'var(--border)', margin: '3px 6px' }} />
-          <button onClick={() => { setOpen(false); ipc.showAbout?.(); }} style={{ ...menuItemStyle(false), color: 'var(--text-2)' }}>
-            <span className="icon icon-sm">info</span>
-            <span>About {version && <span style={{ color: 'var(--text-3)', fontSize: 11 }}>v{version}</span>}</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [lastFieldScan, setLastFieldScan] = useState<ScanPayload | null>(null);
-  const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
-  const [toastMsg, setToastMsg] = useState<{ msg: string; id: number } | null>(null);
-  const nav = useNavigate();
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  )
+}
 
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'
-  );
+function AppInner() {
+  const { user, loading, authEnabled } = useAuth()
+  const navigate = useNavigate()
+  const isAdmin  = !authEnabled || user?.role === 'Admin'
+  const canCreate = !authEnabled || user?.role === 'Admin' || user?.role === 'Editor'
+
+  const [toasts,        setToasts]        = useState<Toast[]>([])
+  const [logPanelOpen,  setLogPanelOpen]  = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+
+  const [lastFieldScan,  setLastFieldScan]  = useState<ScanPayload | null>(null)
+  const [activeFieldId,  setActiveFieldId]  = useState<string | null>(null)
+
+  const pendingGRef = useRef(false)
+  const gTimerRef   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+    const id = ++toastCounter
+    setToasts(prev => [...prev, { id, type, message }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
+  }, [])
+
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
+    (localStorage.getItem('asset-theme') as 'light' | 'dark') || 'dark'
+  )
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-    ipc.setTheme?.(theme).catch(() => {});
-  }, [theme]);
+    ipc.getTheme?.().then((t: string) => {
+      if (t === 'dark' || t === 'light') setThemeState(t)
+    }).catch(() => {})
+  }, [])
 
-  function toggleTheme() {
-    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    localStorage.setItem('asset-theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setThemeState(t => {
+      const next = t === 'light' ? 'dark' : 'light'
+      ipc.setTheme?.(next).catch?.(() => {})
+      return next
+    })
   }
 
-  function triggerToast(msg: string) {
-    setToastMsg({ msg, id: Date.now() });
-    setTimeout(() => setToastMsg(null), 3000);
-  }
+  // ── Update notifications ──────────────────────────────────────────────────
+  useEffect(() => {
+    type Bridge = Window & { assetManager?: {
+      onUpdateAvailable?:    (cb: (info: { version: string }) => void) => void
+      onUpdateNotAvailable?: (cb: () => void) => void
+    }}
+    const win = window as Bridge
+    win.assetManager?.onUpdateAvailable?.((info) => {
+      showToast(`Update v${info.version} available — downloading in background`, 'info')
+    })
+    win.assetManager?.onUpdateNotAvailable?.(() => {
+      showToast("You're on the latest version", 'success')
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    function isTyping(e: KeyboardEvent): boolean {
+      const t = e.target as HTMLElement
+      return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable
+    }
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'n' && canCreate) { e.preventDefault(); navigate('/new-asset'); return }
+        if (e.key === '`' && isAdmin)   { e.preventDefault(); setLogPanelOpen(o => !o); return }
+      }
+
+      if (e.key === 'Escape') {
+        if (shortcutsOpen) { setShortcutsOpen(false); return }
+        if (logPanelOpen)  { setLogPanelOpen(false);  return }
+      }
+
+      if (isTyping(e)) return
+
+      if (pendingGRef.current) {
+        clearTimeout(gTimerRef.current)
+        pendingGRef.current = false
+        const G_ROUTES: Record<string, string> = {
+          d: '/dashboard', a: '/', e: '/employees', l: '/activity', r: '/documents',
+          ...(isAdmin ? { u: '/users', s: '/settings' } : {}),
+        }
+        const route = G_ROUTES[e.key.toLowerCase()]
+        if (route) { e.preventDefault(); navigate(route) }
+        return
+      }
+      if (e.key === 'g' || e.key === 'G') {
+        pendingGRef.current = true
+        clearTimeout(gTimerRef.current)
+        gTimerRef.current = setTimeout(() => { pendingGRef.current = false }, 800)
+        return
+      }
+
+      if (e.key === '/') {
+        e.preventDefault()
+        document.dispatchEvent(new CustomEvent('focus-asset-search'))
+        navigate('/')
+        return
+      }
+
+      if (e.key === '?') {
+        e.preventDefault()
+        setShortcutsOpen(o => !o)
+        return
+      }
+    }
+
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [navigate, canCreate, isAdmin, shortcutsOpen, logPanelOpen])
+
+  // ── Scanner ───────────────────────────────────────────────────────────────
   const { connected, setScannerContext } = useScanner((payload: ScanPayload) => {
     if (payload.mode === 'context_action' && payload.context) {
-      const { action, targetUser, oldAsset } = payload.context;
-      const userStr = targetUser || '';
-      let assetId = payload.value;
-      if (assetId.startsWith('http')) assetId = assetId.split('/').pop() || assetId;
+      const { action, targetUser, oldAsset } = payload.context
+      const userStr = targetUser || ''
+      let assetId   = payload.value
+      if (assetId.startsWith('http')) assetId = assetId.split('/').pop() || assetId
 
       try {
         if (action === 'assign') {
           fetch('/api/asset/assign', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Assigned via mobile scanner' })
-          }).then(() => { triggerToast(`Assigned ${assetId}`); nav(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
+          }).then(() => { showToast(`Assigned ${assetId}`); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
         } else if (action === 'swap' && oldAsset) {
           fetch('/api/asset/return', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -338,116 +695,194 @@ export default function App() {
           }).then(() => fetch('/api/asset/assign', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Swapped via scanner' })
-          })).then(() => { triggerToast('Swapped assets'); nav(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
+          })).then(() => { showToast('Swapped assets'); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
         }
       } catch (e) { console.error('Context action failed', e); }
       return;
     }
 
     if (payload.mode === 'asset_qr') {
-      let assetId = payload.value;
+      let assetId = payload.value
       if (assetId.startsWith('http')) { const parts = assetId.split('/'); assetId = parts[parts.length - 1]; }
-      triggerToast(`Asset scanned: ${assetId}`);
-      nav(`/asset/${encodeURIComponent(assetId)}`);
+      showToast(`Asset scanned: ${assetId}`)
+      navigate(`/asset/${encodeURIComponent(assetId)}`)
     } else {
-      triggerToast('Text received from scanner');
-      setLastFieldScan(payload);
+      showToast('Text received from scanner')
+      setLastFieldScan(payload)
     }
-  });
+  })
+
+  // ── Loading / Login guards ────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-3)' }}>
+      <span className="icon" style={{ fontSize: 32, animation: 'spin .8s linear infinite' }}>sync</span>
+    </div>
+  )
+
+  if (authEnabled && !user) return (
+    <ToastContext.Provider value={{ showToast }}>
+      <LoginPage />
+      <ToastContainer toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
+    </ToastContext.Provider>
+  )
 
   return (
     <ScannerContext.Provider value={{ lastFieldScan, clearFieldScan: () => setLastFieldScan(null), scannerConnected: connected, activeFieldId, setActiveFieldId, setScannerContext }}>
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <ToastContext.Provider value={{ showToast }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-        {/* Toast */}
-        {toastMsg && (
-          <div key={toastMsg.id} className="animate-in" style={{
-            position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
-            background: 'var(--surface-3)', color: 'var(--text-1)',
-            padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 500,
-            boxShadow: 'var(--shadow-3)', zIndex: 9998, border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', gap: 7,
+          {/* ── Top app bar ─────────────────────────────────────────────── */}
+          <header className="app-header" style={{
+            position: 'sticky', top: 0, zIndex: 50,
+            background: 'var(--h-bg)',
+            borderBottom: '1px solid var(--h-border)',
+            height: H_HEIGHT,
+            display: 'flex', alignItems: 'center',
+            flexShrink: 0,
           }}>
-            <span className="icon icon-sm" style={{ color: 'var(--success)' }}>check_circle</span>
-            {toastMsg.msg}
-          </div>
-        )}
+            <div style={{
+              width: '100%', maxWidth: 1440, margin: '0 auto',
+              paddingLeft: 16, paddingRight: 16,
+              display: 'flex', alignItems: 'center', gap: 0, height: '100%',
+            }}>
 
-        {/* ── Top Header / Title Bar ── */}
-        <header
-          className="titlebar-drag"
-          style={{
-            background: 'var(--surface)',
-            borderBottom: '1px solid var(--border)',
-            position: 'sticky', top: 0, zIndex: 100,
-          }}
-        >
-          <div style={{
-            paddingLeft: 16,
-            paddingRight: 152,   /* clear native win controls (~138px + gap) */
-            height: 48,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-          }}>
-            {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <img src="/assets/gravity_asset_v1.svg" alt="Logo" style={{ width: 26, height: 26, flexShrink: 0 }} />
-              <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-1)', letterSpacing: -.2 }}>
-                AssetGravity
-              </span>
+              {/* Brand */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, paddingRight: 24 }}>
+                <img src="/assets/gravity_asset_v1.svg" alt="" style={{ width: 24, height: 24 }} />
+                <div style={{
+                  fontFamily: "'Google Sans', sans-serif",
+                  fontWeight: 700,
+                  fontSize: 16,
+                  color: 'var(--text-1)',
+                  lineHeight: 1,
+                }}>
+                  Asset Manager
+                </div>
+              </div>
+
+              {/* Nav */}
+              <nav style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, overflow: 'hidden' }}>
+                {[...NAV, ...(isAdmin ? NAV_ADMIN : [])].map(item => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    style={({ isActive }) => ({
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '0 12px', height: 36,
+                      borderRadius: 18, textDecoration: 'none', whiteSpace: 'nowrap',
+                      fontFamily: "'Google Sans', sans-serif", fontWeight: 500, fontSize: 13,
+                      background: isActive ? 'var(--h-active-bg)' : 'transparent',
+                      color: isActive ? 'var(--h-active-txt)' : 'var(--text-2)',
+                      transition: 'background-color .12s, color .12s',
+                    })}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLAnchorElement
+                      if (el.getAttribute('aria-current') !== 'page') {
+                        el.style.background = 'var(--h-hover-bg)'
+                        el.style.color = 'var(--text-1)'
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLAnchorElement
+                      if (el.getAttribute('aria-current') !== 'page') {
+                        el.style.background = 'transparent'
+                        el.style.color = 'var(--text-2)'
+                      }
+                    }}
+                  >
+                    <span className="icon icon-sm">{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+
+              {/* Right controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingLeft: 8 }}>
+                {canCreate && (
+                  <button
+                    onClick={() => navigate('/new-asset')}
+                    title="New Asset (Ctrl+N)"
+                    className="md-btn md-btn-tonal md-btn-sm"
+                    style={{ marginRight: 4 }}
+                  >
+                    <span className="icon icon-sm">add</span>New
+                  </button>
+                )}
+                <ScannerQRButton connected={connected} />
+                <SyncButton showToast={showToast} />
+                <HeaderIconBtn
+                  icon={theme === 'light' ? 'dark_mode' : 'light_mode'}
+                  title={theme === 'light' ? 'Dark mode' : 'Light mode'}
+                  onClick={toggleTheme}
+                />
+                <HeaderIconBtn
+                  icon="keyboard"
+                  title="Keyboard shortcuts (?)"
+                  onClick={() => setShortcutsOpen(o => !o)}
+                />
+                {isAdmin && (
+                  <HeaderIconBtn
+                    icon="terminal"
+                    title="Server logs (Ctrl+`)"
+                    onClick={() => setLogPanelOpen(o => !o)}
+                  />
+                )}
+                <div style={{ marginLeft: 4 }}>
+                  <UserMenu />
+                </div>
+                {isElectron && <div style={{ width: 138, flexShrink: 0 }} />}
+              </div>
             </div>
+          </header>
 
-            <div style={{ width: 1, height: 18, background: 'var(--border)', flexShrink: 0 }} />
-
-            {/* Nav */}
-            <nav style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
-              <NavLink to="/dashboard" icon="dashboard"   label="Dashboard" />
-              <NavLink to="/"          icon="grid_view"   label="Browse"    />
-              <NavLink to="/new-asset" icon="add_box"     label="Create"    />
-              <NavLink to="/employees" icon="group"       label="People"    />
-              <NavLink to="/documents" icon="description" label="Documents" />
-              <NavLink to="/activity"  icon="history"     label="Activity"  />
-            </nav>
-
-            {/* Right actions */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <QuickLookup />
-              <ScannerQRButton connected={connected} />
-              <SyncButton />
-              {/* Theme toggle — always visible */}
-              <button
-                onClick={toggleTheme}
-                className="md-btn"
-                title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-                style={{ padding: '5px 8px', borderRadius: 6, background: 'transparent', border: '1px solid transparent', color: 'var(--text-2)', minWidth: 0 }}
-              >
-                <span className="icon" style={{ fontSize: 17 }}>{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
-              </button>
-              <AppMenu theme={theme} onToggleTheme={toggleTheme} />
+          {/* ── Page content ─────────────────────────────────────────────── */}
+          <main style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
+            <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 20px' }}>
+              <Routes>
+                <Route path="/"            element={<BrowsePage />} />
+                <Route path="/dashboard"   element={<DashboardPage />} />
+                <Route path="/asset/:id"   element={<AssetDetailPage />} />
+                <Route path="/edit/:id"    element={<EditAssetPage />} />
+                <Route path="/assign/:id"  element={<AssignPage />} />
+                <Route path="/return/:id"  element={<ReturnPage />} />
+                <Route path="/new-asset"   element={<NewAssetPage />} />
+                <Route path="/employees"   element={<EmployeeManagerPage />} />
+                <Route path="/new-employee" element={<NewEmployeePage />} />
+                <Route path="/employee/:email" element={<EmployeePage />} />
+                <Route path="/documents"   element={<DocumentsPage />} />
+                <Route path="/activity"    element={<ActivityLogPage />} />
+                <Route path="/swap/:id"    element={<SwapPage />} />
+                <Route path="/users"       element={<UsersPageLazy />} />
+                <Route path="/settings"    element={<SettingsPageLazy />} />
+                <Route path="/onboarding" element={<OnboardingPageLazy />} />
+              </Routes>
             </div>
-          </div>
-        </header>
+          </main>
+        </div>
 
-        {/* ── Page Content ── */}
-        <main style={{ flex: 1, maxWidth: 1280, width: '100%', margin: '0 auto', padding: '24px 20px' }}>
-          <Routes>
-            <Route path="/" element={<BrowsePage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/asset/:id" element={<AssetDetailPage />} />
-            <Route path="/edit/:id" element={<EditAssetPage />} />
-            <Route path="/assign/:id" element={<AssignPage />} />
-            <Route path="/return/:id" element={<ReturnPage />} />
-            <Route path="/new-asset" element={<NewAssetPage />} />
-            <Route path="/employees" element={<EmployeeManagerPage />} />
-            <Route path="/new-employee" element={<NewEmployeePage />} />
-            <Route path="/employee/:email" element={<EmployeePage />} />
-            <Route path="/documents" element={<DocumentsPage />} />
-            <Route path="/activity"  element={<ActivityLogPage />} />
-            <Route path="/swap/:id"  element={<SwapPage />} />
-          </Routes>
-        </main>
-      </div>
+        {isAdmin && logPanelOpen  && <LogPanel onClose={() => setLogPanelOpen(false)} />}
+        {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} isAdmin={isAdmin} canCreate={canCreate} />}
+        <ToastContainer toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
+      </ToastContext.Provider>
     </ScannerContext.Provider>
-  );
+  )
+}
+
+function UsersPageLazy() {
+  const { user, authEnabled } = useAuth()
+  const isAdmin = !authEnabled || user?.role === 'Admin'
+  if (!isAdmin) return <div style={{ padding: 32, color: 'var(--text-2)' }}>Access denied</div>
+  const UsersPage = require('./pages/UsersPage').default
+  return <UsersPage />
+}
+
+function SettingsPageLazy() {
+  const SettingsPage = require('./pages/SettingsPage').default
+  return <SettingsPage />
+}
+
+function OnboardingPageLazy() {
+  const OnboardingPage = require('./pages/OnboardingPage').default
+  return <OnboardingPage />
 }

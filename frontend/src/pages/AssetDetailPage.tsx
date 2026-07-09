@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Asset, ActivityLogItem } from '../lib/types';
 import { StatusBadge } from '../components/StatusBadge';
+import { MarkdownView } from '../components/MarkdownView';
 
 const TYPE_ICON: Record<string, string> = {
   laptop: 'laptop', desktop: 'desktop_windows', monitor: 'monitor',
@@ -377,7 +378,7 @@ export function AssetDetailPage() {
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span className="icon icon-sm">sticky_note_2</span> Notes
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text-1)', margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{asset.notes}</p>
+                <MarkdownView content={asset.notes} />
               </div>
             )}
           </div>

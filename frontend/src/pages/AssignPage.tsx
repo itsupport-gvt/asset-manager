@@ -29,6 +29,7 @@ export function AssignPage() {
     setLoading(true); setError('');
     try {
       const res = await api.assignAsset({ asset_id: assetId, employee_email: empEmail, condition, notes });
+      api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
       nav(`/asset/${encodeURIComponent(assetId)}`, { state: { toast: `Assigned — ${res.assignment_id}` } });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Assign failed');

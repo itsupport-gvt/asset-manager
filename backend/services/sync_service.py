@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
 
 from config import MASTER_TABLE, EMP_TABLE, LOG_TABLE
-from graph_client import graph, _excel_serial_to_str
+from graph_client import GraphClient, _excel_serial_to_str
 from models_db import DBAsset, DBEmployee, DBAssignmentLog
 
 
@@ -83,7 +83,7 @@ _sync_status = {
 def get_current_sync_status():
     return _sync_status
 
-def sync_from_excel(db: Session):
+def sync_from_excel(db: Session, graph: GraphClient):
     """
     Pulls the two main tables (MasterTable and tbl_Employees) from Excel via Graph API
     and updates the local SQLite DB.
@@ -158,7 +158,7 @@ def sync_from_excel(db: Session):
 
         print(f"[sync_from_excel] Employees: {new_emps} added, {updated_emps} updated, {skipped_emps} skipped.")
 
-        print("[sync_from_excel] Fetching assets...")
+        print("[sync_from_excel] Fetching assets ...")
         asset_rows = graph.get_table_rows(MASTER_TABLE)
         print(f"[sync_from_excel] Found {len(asset_rows)} raw asset rows. Processing...")
 
@@ -316,7 +316,7 @@ def _parse_excel_timestamp(raw: str):
     return None
 
 
-def sync_logs_from_excel(db: Session) -> dict:
+def sync_logs_from_excel(db: Session, graph: GraphClient) -> dict:
     """
     Pulls the Assignment_Log table from Excel and imports entries not already
     present locally. Deduplicates via source_log_id (Excel LogID) when available;
@@ -435,7 +435,7 @@ def sync_logs_from_excel(db: Session) -> dict:
         raise
 
 
-def sync_to_excel(db: Session):
+def sync_to_excel(db: Session, graph: GraphClient):
     """
     Pushes all local changes (needs_sync=True) back to the Excel workbook via Graph API.
     - Assets: updates the matching row in MasterTable by asset_id, or appends if new.
@@ -519,14 +519,13 @@ def sync_to_excel(db: Session):
                 "OS":               asset.os or "",
                 "Operating System": asset.os or "",
             }
-            row_values = [field_map.get(h, "") for h in headers]
             print(f"[sync_to_excel] Pushing asset {asset.asset_id} — {asset.status}")
 
             try:
                 if asset.asset_id in row_index_by_id:
-                    graph.update_table_row(MASTER_TABLE, row_index_by_id[asset.asset_id], row_values)
+                    graph.update_table_row(MASTER_TABLE, row_index_by_id[asset.asset_id], field_map, headers)
                 else:
-                    graph.add_table_row(MASTER_TABLE, row_values)
+                    graph.add_table_row(MASTER_TABLE, field_map, headers)
                 asset.needs_sync = False
                 pushed += 1
             except Exception as e:
@@ -563,9 +562,8 @@ def sync_to_excel(db: Session):
                     "ReturnFrom":   log.employee_email if not is_assign else "",
                     "Notes":        log.notes or "",
                 }
-                row_vals = [log_map.get(h, "") for h in log_headers]
                 try:
-                    graph.add_table_row(LOG_TABLE, row_vals)
+                    graph.add_table_row(LOG_TABLE, log_map, log_headers)
                     # Store LogID back so future pull-logs won't re-import this entry
                     log.source_log_id = log_id
                     log.needs_sync = False

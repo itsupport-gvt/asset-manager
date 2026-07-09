@@ -4,7 +4,6 @@ from database import get_db
 from models_db import DBEmployee
 from models import EmployeeResponse, CreateEmployeeRequest
 from config import EMP_TABLE
-from graph_client import graph
 
 router = APIRouter(prefix="/api")
 
@@ -46,31 +45,5 @@ async def create_employee(req: CreateEmployeeRequest, db: Session = Depends(get_
     db.add(new_emp)
     db.commit()
     db.refresh(new_emp)
-
-    # 2. Push to Excel's tbl_Employees table
-    # Get the current column order so we write values in the right positions
-    try:
-        headers = graph.get_table_headers(EMP_TABLE)
-        # Build a row aligned to the Excel column order
-        field_map = {
-            "FullName":        req.full_name,
-            "Full Name":       req.full_name,
-            "Email":           req.email if not is_room else "",
-            "Email Address":   req.email if not is_room else "",
-            "EmployeeID":      req.employee_id or "",
-            "Employee ID":     req.employee_id or "",
-            "EmployeeDisplay": emp_display,
-            "Designation":     req.designation or "",
-            "Department":      "",
-            "EmploymentStatus": "Active",
-            "HireDate":        "",
-            "TerminationDate": "",
-        }
-        row_values = [field_map.get(h, "") for h in headers]
-        graph.add_table_row(EMP_TABLE, row_values)
-        print(f"[create_employee] Pushed '{req.full_name}' to Excel tbl_Employees")
-    except Exception as e:
-        # Don't fail the whole request if Excel write fails — log and continue
-        print(f"[create_employee] WARNING: Excel write failed: {e}")
 
     return {"success": True, "email": new_emp.email, "is_room": is_room}

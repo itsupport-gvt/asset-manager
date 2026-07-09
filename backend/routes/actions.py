@@ -13,19 +13,12 @@ from database import get_db, SessionLocal
 from models_db import DBAsset, DBEmployee, DBAssignmentLog
 from models import AssignRequest, ReturnRequest, CreateAssetRequest, SwapRequest
 from config import TYPE_CODE_MAP, MASTER_TABLE
-from graph_client import graph
-from services.sync_service import sync_to_excel
 
 
 def _push_excel_bg():
-    """Pushes needs_sync rows to Excel. Runs in a FastAPI background task."""
-    db = SessionLocal()
-    try:
-        sync_to_excel(db)
-    except Exception as e:
-        print(f"[auto-push] Error: {e}")
-    finally:
-        db.close()
+    # No-op: Excel push now requires a delegated Graph token.
+    # The Electron auto-sync (or user-triggered push from Settings) handles this.
+    pass
 
 router = APIRouter(prefix="/api")
 
@@ -328,63 +321,6 @@ async def create_asset(req: CreateAssetRequest, db: Session = Depends(get_db)):
     )
     db.add(new_asset)
     db.commit()
-
-    # Push to Excel MasterTable immediately
-    try:
-        headers = graph.get_table_headers(MASTER_TABLE)
-        field_map = {
-            "Asset ID":          new_asset_id,
-            "AssetID":           new_asset_id,
-            "Asset_ID_QR":       new_asset_id_qr,
-            "AssetIDQR":         new_asset_id_qr,
-            "Asset_Type":        req.asset_type,
-            "Asset Type":        req.asset_type,
-            "Item Type":         req.asset_type,
-            "Status":            req.status or "In Stock",
-            "Condition":         req.condition or "",
-            "Brand":             req.brand or "",
-            "Model":             req.model or "",
-            "Serial_Number":     serial_up,
-            "Serial Number":     serial_up,
-            "SerialNumber":      serial_up,
-            "Storage":           req.storage or "",
-            "Memory(RAM)":       req.memory_ram or "",
-            "RAM":               req.memory_ram or "",
-            "Purchase_Date":     req.purchase_date or "",
-            "Purchase Date":     req.purchase_date or "",
-            "Purchase_Price":    req.purchase_price or "",
-            "Purchase Price":    req.purchase_price or "",
-            "Vendor":            req.vendor or "",
-            "Invoice Reference": req.invoice_ref or "",
-            "Invoice Ref":       req.invoice_ref or "",
-            "Warranty_End":      req.warranty_end or "",
-            "Warranty End":      req.warranty_end or "",
-            "Username":          "",
-            "EmployeeID":        "",
-            "Employee ID":       "",
-            "EmployeeDisplay":   "Not Assigned",
-            "Location":          req.location or "",
-            "Notes":             req.notes or "",
-            "Pin/Password":      req.pin_password or "",
-            "PIN/Password":      req.pin_password or "",
-            "AssignmentID":      "",
-            "Assignment ID":     "",
-            "DateAssigned":      "",
-            "Date Assigned":     "",
-            "Charger_Model":     req.charger_model or "",
-            "Charger Model":     req.charger_model or "",
-            "Charger_Serial":    req.charger_serial or "",
-            "Charger Serial":    req.charger_serial or "",
-            "Charger_Notes":     req.charger_notes or "",
-            "Charger Notes":     req.charger_notes or "",
-        }
-        row_values = [field_map.get(h, "") for h in headers]
-        graph.add_table_row(MASTER_TABLE, row_values)
-        new_asset.needs_sync = False
-        db.commit()
-        print(f"[create_asset] Pushed '{new_asset_id}' to Excel MasterTable")
-    except Exception as e:
-        print(f"[create_asset] WARNING: Excel write failed: {e}")
 
     # Audit log for asset creation
     asset_label = " ".join(p for p in [req.asset_type, req.brand, req.model, new_asset_id] if p)
