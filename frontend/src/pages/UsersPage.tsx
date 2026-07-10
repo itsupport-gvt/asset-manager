@@ -113,7 +113,7 @@ export default function UsersPage() {
           display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <span className="icon" style={{ color: 'var(--text-3)' }}>info</span>
-          Authentication is disabled. Configure <code>AUTH_CLIENT_ID</code> and <code>AUTH_TENANT_ID</code> to enable Microsoft sign-in.
+          Authentication is disabled. Set <code>AUTH_CLIENT_ID</code> in Settings → SharePoint &amp; authentication to enable Microsoft sign-in.
         </div>
       )}
 
