@@ -8,6 +8,13 @@ const net   = require('net');
 const { spawn, execSync } = require('child_process');
 const crypto = require('crypto');
 const msal   = require('@azure/msal-node');
+const log    = require('electron-log/main');
+
+// ── Logging ───────────────────────────────────────────────────────────────────
+log.initialize();
+log.transports.file.level = 'debug';
+log.transports.console.level = 'debug';
+Object.assign(console, log.functions);
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 const APP_DATA_DIR = path.join(app.getPath('appData'), 'AssetManager');
@@ -420,10 +427,10 @@ function spawnBackend(port) {
     windowsHide: true,
   });
 
-  backendProc.stdout.on('data', d => console.log('[backend]', d.toString().trim()));
-  backendProc.stderr.on('data', d => console.error('[backend]', d.toString().trim()));
+  backendProc.stdout.on('data', d => log.info('[backend]', d.toString().trim()));
+  backendProc.stderr.on('data', d => log.warn('[backend]', d.toString().trim()));
   backendProc.on('exit', (code) => {
-    console.log(`[Electron] Backend exited with code ${code}`);
+    log.info(`[Electron] Backend exited with code ${code}`);
   });
 }
 
@@ -490,6 +497,8 @@ ipcMain.handle('setup-complete', async (_, cfg) => {
 ipcMain.handle('get-port', () => backendPort);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-log-path', () => log.transports.file.getFile().path);
+ipcMain.handle('open-path', (_e, filePath) => shell.showItemInFolder(filePath));
 
 ipcMain.handle('open-settings', () => {
   if (setupWindow && !setupWindow.isDestroyed()) {
@@ -665,6 +674,19 @@ async function launchApp(initialPath = '') {
       mainWindow.webContents.setWindowOpenHandler(({ url: u }) => {
         shell.openExternal(u);
         return { action: 'deny' };
+      });
+      // F12 / Ctrl+Shift+I toggles DevTools (useful for diagnosing blank-screen issues)
+      mainWindow.webContents.on('before-input-event', (_e, input) => {
+        if (input.type !== 'keyDown') return;
+        const devKeys = (input.key === 'F12') ||
+          (input.control && input.shift && input.key === 'I');
+        if (devKeys) mainWindow.webContents.toggleDevTools();
+      });
+      mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+        log.error(`[Electron] Page failed to load: ${code} ${desc} — ${url}`);
+      });
+      mainWindow.webContents.on('render-process-gone', (_e, details) => {
+        log.error(`[Electron] Renderer process gone: ${details.reason}`);
       });
     }
 

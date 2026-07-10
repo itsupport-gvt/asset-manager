@@ -52,6 +52,7 @@ export default function SettingsPage() {
     AUTH_CLIENT_ID:      '',
   })
   const [appVersion, setAppVersion] = useState('')
+  const [logPath,    setLogPath]    = useState('')
 
   useEffect(() => {
     api.getSyncStatus().then(setSyncStatus).catch(() => {}).finally(() => setSyncLoading(false))
@@ -63,6 +64,7 @@ export default function SettingsPage() {
         .catch(() => {})
         .finally(() => setConfigLoading(false))
       ipc.getAppVersion?.().then(setAppVersion).catch(() => setAppVersion('Unknown'))
+      ipc.getLogPath?.().then(setLogPath).catch(() => {})
     } else {
       setAppVersion('Web mode')
     }
@@ -295,6 +297,17 @@ export default function SettingsPage() {
         {/* Application */}
         <Card title="Application">
           <StatRow label="Version" value={appVersion || '…'} />
+          {isElectron && logPath && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize: 14, color: 'var(--text-2)' }}>Log file</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace', marginTop: 2 }}>{logPath}</div>
+              </div>
+              <button onClick={() => (window as any).assetManager?.openPath?.(logPath)} className="md-btn md-btn-tonal md-btn-sm">
+                <span className="icon icon-sm">folder_open</span>Open
+              </button>
+            </div>
+          )}
           {isElectron && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
               <span style={{ fontSize: 14, color: 'var(--text-2)' }}>Updates</span>

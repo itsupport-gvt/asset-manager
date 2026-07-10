@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('assetManager', {
   getPort:       ()    => ipcRenderer.invoke('get-port'),
 
   getAppVersion:   () => ipcRenderer.invoke('get-app-version'),
+  getLogPath:      () => ipcRenderer.invoke('get-log-path'),
+  openPath:        (p) => ipcRenderer.invoke('open-path', p),
   openSettings:    () => ipcRenderer.invoke('open-settings'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   showAbout:       () => ipcRenderer.invoke('show-about'),
