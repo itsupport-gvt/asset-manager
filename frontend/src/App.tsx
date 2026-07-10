@@ -18,6 +18,9 @@ import { DashboardPage } from './pages/DashboardPage';
 import { DocumentsPage } from './pages/DocumentsPage';
 import { ActivityLogPage } from './pages/ActivityLogPage';
 import { SwapPage } from './pages/SwapPage';
+import UsersPage from './pages/UsersPage';
+import SettingsPage from './pages/SettingsPage';
+import OnboardingPage from './pages/OnboardingPage';
 
 const isElectron = typeof window !== 'undefined' && !!(window as Window & { assetManager?: unknown }).assetManager
 const H_HEIGHT = 56
@@ -854,8 +857,8 @@ function AppInner() {
                 <Route path="/activity"    element={<ActivityLogPage />} />
                 <Route path="/swap/:id"    element={<SwapPage />} />
                 <Route path="/users"       element={<UsersPageLazy />} />
-                <Route path="/settings"    element={<SettingsPageLazy />} />
-                <Route path="/onboarding" element={<OnboardingPageLazy />} />
+                <Route path="/settings"    element={<SettingsPage />} />
+                <Route path="/onboarding" element={<OnboardingPage />} />
               </Routes>
             </div>
           </main>
@@ -873,16 +876,5 @@ function UsersPageLazy() {
   const { user, authEnabled } = useAuth()
   const isAdmin = !authEnabled || user?.role === 'Admin'
   if (!isAdmin) return <div style={{ padding: 32, color: 'var(--text-2)' }}>Access denied</div>
-  const UsersPage = require('./pages/UsersPage').default
   return <UsersPage />
-}
-
-function SettingsPageLazy() {
-  const SettingsPage = require('./pages/SettingsPage').default
-  return <SettingsPage />
-}
-
-function OnboardingPageLazy() {
-  const OnboardingPage = require('./pages/OnboardingPage').default
-  return <OnboardingPage />
 }
