@@ -238,7 +238,8 @@ function ShortcutsModal({ onClose, isAdmin, canCreate }: { onClose: () => void; 
     {
       heading: 'Search',
       rows: [
-        { keys: '/', action: 'Focus asset search', scope: 'Global' },
+        { keys: '/',         action: 'Focus asset search', scope: 'Global' },
+        { keys: 'Backspace', action: 'Go back',            scope: 'Global · not in text field' },
       ],
     },
     {
@@ -626,6 +627,12 @@ function AppInner() {
       if (e.key === 'Escape') {
         if (shortcutsOpen) { setShortcutsOpen(false); return }
         if (logPanelOpen)  { setLogPanelOpen(false);  return }
+      }
+
+      if (e.key === 'Backspace' && !isTyping(e)) {
+        e.preventDefault()
+        navigate(-1)
+        return
       }
 
       if (isTyping(e)) return

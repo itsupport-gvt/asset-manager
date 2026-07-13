@@ -29,7 +29,7 @@ export function ReturnPage() {
     try {
       const res = await api.returnAsset({ asset_id: assetId, condition, notes });
       api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
-      nav(`/asset/${encodeURIComponent(assetId)}`, { state: { toast: `Returned from ${res.returned_from}` } });
+      nav(`/asset/${encodeURIComponent(assetId)}`, { state: { toast: `Returned from ${res.returned_from}` }, replace: true });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Return failed');
     } finally { setLoading(false); }

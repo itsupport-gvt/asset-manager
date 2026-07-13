@@ -70,6 +70,7 @@ export function SwapPage() {
       api.pushToExcel().then(() => window.dispatchEvent(new CustomEvent('sync-status-changed'))).catch(() => {});
       nav(`/asset/${encodeURIComponent(assetId)}`, {
         state: { toast: mode === 'person' ? 'Asset swapped to new person' : 'Stock swap complete' },
+        replace: true,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Swap failed');
