@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Asset } from '../lib/types';
@@ -15,9 +15,17 @@ export function BrowsePage() {
   const [assignee, setAssignee]   = useState('');
   const [ramFilter, setRamFilter] = useState('');
   const [storageFilter, setStorageFilter] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.listAssets('', '').then(setAllAssets).catch(e => setError(e.message)).finally(() => setLoading(false));
+    searchRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const focus = () => { searchRef.current?.focus(); searchRef.current?.select(); };
+    document.addEventListener('focus-asset-search', focus);
+    return () => document.removeEventListener('focus-asset-search', focus);
   }, []);
 
   const types    = useMemo(() => Array.from(new Set(allAssets.map(a => a.asset_type).filter(Boolean))).sort(), [allAssets]);
@@ -63,6 +71,7 @@ export function BrowsePage() {
         <div style={{ flex: '1 1 240px', position: 'relative' }}>
           <span className="icon icon-sm" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-3)' }}>search</span>
           <input
+            ref={searchRef}
             type="text" value={q} onChange={e => setQ(e.target.value)}
             placeholder="Search assets, serials, people…"
             className="md-input" style={{ paddingLeft: 34 }}
