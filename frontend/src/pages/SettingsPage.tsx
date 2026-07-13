@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { NavLink } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useToast } from '../App'
@@ -53,6 +54,17 @@ export default function SettingsPage() {
   })
   const [appVersion, setAppVersion] = useState('')
   const [logPath,    setLogPath]    = useState('')
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() =>
+    (localStorage.getItem('asset-theme') as 'light' | 'dark') || 'dark'
+  )
+
+  function toggleTheme() {
+    const next = theme === 'light' ? 'dark' : 'light'
+    document.documentElement.classList.toggle('dark', next === 'dark')
+    localStorage.setItem('asset-theme', next)
+    ;(window as any).assetManager?.setTheme?.(next).catch?.(() => {})
+    setThemeState(next)
+  }
 
   useEffect(() => {
     api.getSyncStatus().then(setSyncStatus).catch(() => {}).finally(() => setSyncLoading(false))
@@ -261,6 +273,35 @@ export default function SettingsPage() {
                 </div>
               </form>
             )}
+          </Card>
+        )}
+
+        {/* Appearance */}
+        <Card title="Appearance">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 14, color: 'var(--text-2)' }}>Theme</span>
+            <button onClick={toggleTheme} className="md-btn md-btn-tonal md-btn-sm">
+              <span className="icon icon-sm">{theme === 'light' ? 'dark_mode' : 'light_mode'}</span>
+              {theme === 'light' ? 'Dark mode' : 'Light mode'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0' }}>
+            <span style={{ fontSize: 14, color: 'var(--text-2)' }}>Keyboard shortcuts</span>
+            <button onClick={() => document.dispatchEvent(new CustomEvent('open-shortcuts'))} className="md-btn md-btn-tonal md-btn-sm">
+              <span className="icon icon-sm">keyboard</span>View
+            </button>
+          </div>
+        </Card>
+
+        {/* Access control (Admin only) */}
+        {isAdmin && (
+          <Card title="Access control">
+            <p style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 0, marginBottom: 16 }}>
+              Manage Microsoft Entra accounts and app access roles.
+            </p>
+            <NavLink to="/users" className="md-btn md-btn-outlined" style={{ display: 'inline-flex', textDecoration: 'none' }}>
+              <span className="icon icon-sm">manage_accounts</span>Manage users
+            </NavLink>
           </Card>
         )}
 

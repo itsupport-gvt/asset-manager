@@ -140,7 +140,7 @@ export function BrowsePage() {
         </div>
       )}
       {!loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, alignItems: 'stretch' }}>
           {filtered.map(a => <AssetCard key={a.asset_id} asset={a} />)}
         </div>
       )}

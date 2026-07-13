@@ -184,7 +184,7 @@ export interface AuthUser {
   effective_role: string;
   is_active: boolean;
   last_login: string;
-  created_at: string;
+  created_at?: string;
 }
 
 // Scanner Context Payload

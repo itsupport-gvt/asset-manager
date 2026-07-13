@@ -317,6 +317,13 @@ export const api = {
     notes?: string;
   }) => req<{ success: boolean; mode: string; [key: string]: unknown }>('/api/asset/swap', json(body)),
 
+  // ── Dashboard stats ───────────────────────────────────────────────────────
+  getStats: (params: { from_date?: string; to_date?: string } = {}) => {
+    const entries = Object.entries(params).filter(([, v]) => v)
+    const qs = entries.length ? '?' + new URLSearchParams(Object.fromEntries(entries)).toString() : ''
+    return req<Record<string, unknown>>(`/api/stats${qs}`)
+  },
+
   // ── Asset export CSV ───────────────────────────────────────────────────────
   exportAssetsCsvUrl: (params: { q?: string; status?: string; type?: string }): string => {
     const qs = new URLSearchParams(

@@ -544,10 +544,7 @@ const NAV: NavItem[] = [
   { to: '/activity',             label: 'Activity',  icon: 'history'     },
 ]
 
-const NAV_ADMIN: NavItem[] = [
-  { to: '/users',    label: 'Users',    icon: 'manage_accounts' },
-  { to: '/settings', label: 'Settings', icon: 'settings'        },
-]
+const NAV_ADMIN: NavItem[] = []
 
 // ── App ────────────────────────────────────────────────────────────────────────
 
@@ -596,14 +593,6 @@ function AppInner() {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     localStorage.setItem('asset-theme', theme)
   }, [theme])
-
-  const toggleTheme = () => {
-    setThemeState(t => {
-      const next = t === 'light' ? 'dark' : 'light'
-      ipc.setTheme?.(next).catch?.(() => {})
-      return next
-    })
-  }
 
   // ── Update notifications ──────────────────────────────────────────────────
   useEffect(() => {
@@ -676,6 +665,12 @@ function AppInner() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [navigate, canCreate, isAdmin, shortcutsOpen, logPanelOpen])
+
+  useEffect(() => {
+    const open = () => setShortcutsOpen(true)
+    document.addEventListener('open-shortcuts', open)
+    return () => document.removeEventListener('open-shortcuts', open)
+  }, [])
 
   // ── Scanner ───────────────────────────────────────────────────────────────
   const { connected, setScannerContext } = useScanner((payload: ScanPayload) => {
@@ -812,18 +807,7 @@ function AppInner() {
                     <span className="icon icon-sm">add</span>New
                   </button>
                 )}
-                <ScannerQRButton connected={connected} />
                 <SyncButton showToast={showToast} />
-                <HeaderIconBtn
-                  icon={theme === 'light' ? 'dark_mode' : 'light_mode'}
-                  title={theme === 'light' ? 'Dark mode' : 'Light mode'}
-                  onClick={toggleTheme}
-                />
-                <HeaderIconBtn
-                  icon="keyboard"
-                  title="Keyboard shortcuts (?)"
-                  onClick={() => setShortcutsOpen(o => !o)}
-                />
                 {isAdmin && (
                   <HeaderIconBtn
                     icon="terminal"
@@ -831,6 +815,34 @@ function AppInner() {
                     onClick={() => setLogPanelOpen(o => !o)}
                   />
                 )}
+                <NavLink
+                  to="/settings"
+                  title="Settings"
+                  style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 36, height: 36, borderRadius: 18, border: 'none',
+                    background: isActive ? 'var(--h-active-bg)' : 'transparent',
+                    color: isActive ? 'var(--h-active-txt)' : 'var(--text-2)',
+                    textDecoration: 'none', flexShrink: 0,
+                    transition: 'background-color .12s, color .12s',
+                  })}
+                  onMouseEnter={e => {
+                    const el = e.currentTarget as HTMLAnchorElement
+                    if (el.getAttribute('aria-current') !== 'page') {
+                      el.style.background = 'var(--h-hover-bg)'
+                      el.style.color = 'var(--text-1)'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    const el = e.currentTarget as HTMLAnchorElement
+                    if (el.getAttribute('aria-current') !== 'page') {
+                      el.style.background = 'transparent'
+                      el.style.color = 'var(--text-2)'
+                    }
+                  }}
+                >
+                  <span className="icon icon-sm">settings</span>
+                </NavLink>
                 <div style={{ marginLeft: 4 }}>
                   <UserMenu />
                 </div>

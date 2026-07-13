@@ -143,13 +143,9 @@ export function DashboardPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (fromDate) params.set('from_date', fromDate);
-    if (toDate)   params.set('to_date',   toDate);
-    const qs = params.toString();
-    fetch(`/api/stats${qs ? `?${qs}` : ''}`).then(r => r.json())
-      .then(d => { setStats(d); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+    api.getStats({ from_date: fromDate || undefined, to_date: toDate || undefined })
+      .then(d => { setStats(d as unknown as DashboardStats); setLoading(false); })
+      .catch(e => { setError(e instanceof Error ? e.message : 'Failed to load'); setLoading(false); });
   }, [fromDate, toDate]);
 
   useEffect(() => { load(); }, [load]);
