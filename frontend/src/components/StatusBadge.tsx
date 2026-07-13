@@ -19,7 +19,7 @@ export function StatusBadge({ status }: Props) {
       background: s.bg, color: s.color,
       fontSize: 12, fontWeight: 500,
     }}>
-      <span style={{ fontFamily: 'Material Icons Round', fontSize: 13, lineHeight: 1 }}>{s.icon}</span>
+      <span className="icon" style={{ fontSize: 13, lineHeight: 1 }}>{s.icon}</span>
       {status}
     </span>
   );
