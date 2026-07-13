@@ -319,7 +319,7 @@ export function OverlayPage() {
   const printedSet = new Set(printLog?.printed_ids ?? []);
 
   const returnBadge = (
-    <span style={{ fontSize: 10, background: '#fce8e6', color: '#c5221f', padding: '2px 6px', borderRadius: 8, fontWeight: 600, marginLeft: 6, letterSpacing: 0.3 }}>
+    <span style={{ fontSize: 10, background: 'var(--danger-bg)', color: 'var(--danger)', padding: '2px 6px', borderRadius: 8, fontWeight: 600, marginLeft: 6, letterSpacing: 0.3 }}>
       RETURN
     </span>
   );
@@ -503,7 +503,7 @@ export function OverlayPage() {
                           <td style={{ padding: '8px 10px', color: 'var(--text-2)' }}>{row.brand} {row.model}</td>
                           <td style={{ padding: '8px 10px', color: 'var(--text-3)', fontSize: 12 }}>{row.serial_number}</td>
                           <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                            {printed && <span style={{ fontSize: 11, background: '#ceead6', color: '#1e7e34', padding: '2px 7px', borderRadius: 10 }}>printed</span>}
+                            {printed && <span style={{ fontSize: 11, background: 'var(--success-bg)', color: 'var(--success)', padding: '2px 7px', borderRadius: 10 }}>printed</span>}
                           </td>
                         </tr>
                       );
@@ -513,7 +513,7 @@ export function OverlayPage() {
                         <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                           <button
                             onClick={(e) => { e.stopPropagation(); setCustomItems(ci => ci.filter((_, j) => j !== i)); }}
-                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--error)', padding: 0 }}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--danger)', padding: 0 }}
                             title="Remove custom item"
                           >
                             <span className="icon" style={{ fontSize: 18 }}>remove_circle_outline</span>
@@ -524,7 +524,7 @@ export function OverlayPage() {
                         <td style={{ padding: '8px 10px', color: 'var(--text-2)' }}>{row.brand} {row.model}</td>
                         <td style={{ padding: '8px 10px', color: 'var(--text-3)', fontSize: 12 }}>{row.serial_number}</td>
                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 11, background: '#e8f0fe', color: '#1a73e8', padding: '2px 7px', borderRadius: 10 }}>custom</span>
+                          <span style={{ fontSize: 11, background: 'var(--primary-bg)', color: 'var(--primary)', padding: '2px 7px', borderRadius: 10 }}>custom</span>
                         </td>
                       </tr>
                     ))}
@@ -576,9 +576,9 @@ export function OverlayPage() {
                   className="md-btn"
                   style={{
                     fontSize: 13,
-                    background: showReturns ? '#fce8e6' : 'var(--surface-2)',
-                    color: showReturns ? '#c5221f' : 'var(--text-2)',
-                    border: `1px solid ${showReturns ? '#f4b8b4' : 'var(--border)'}`,
+                    background: showReturns ? 'var(--danger-bg)' : 'var(--surface-2)',
+                    color: showReturns ? 'var(--danger)' : 'var(--text-2)',
+                    border: `1px solid ${showReturns ? 'var(--danger)' : 'var(--border)'}`,
                   }}
                   onClick={() => setShowReturns(v => !v)}
                 >
@@ -596,15 +596,15 @@ export function OverlayPage() {
                     <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 10px' }}>
                       Select assets being returned by this employee. They will be added to the next available rows on the same form with a "Returned" note.
                     </p>
-                    <div style={{ border: '1px solid #f4b8b4', borderRadius: 10, overflow: 'hidden', background: '#fff8f8' }}>
+                    <div style={{ border: '1px solid var(--danger)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
-                          <tr style={{ background: '#fce8e6' }}>
+                          <tr style={{ background: 'var(--danger-bg)' }}>
                             <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}></th>
-                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Asset ID</th>
-                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Type</th>
-                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Brand / Model</th>
-                            <th style={{ padding: '7px 10px', textAlign: 'left', color: '#c5221f', fontWeight: 500 }}>Note on form</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--danger)', fontWeight: 500 }}>Asset ID</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--danger)', fontWeight: 500 }}>Type</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--danger)', fontWeight: 500 }}>Brand / Model</th>
+                            <th style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--danger)', fontWeight: 500 }}>Note on form</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -617,7 +617,7 @@ export function OverlayPage() {
                             return (
                               <tr
                                 key={`ret-${row.id}`}
-                                style={{ borderTop: '1px solid #f4b8b4', cursor: 'pointer', background: checked ? '#fce8e6' : 'transparent' }}
+                                style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: checked ? 'var(--danger-bg)' : 'transparent' }}
                                 onClick={() => {
                                   const next = new Set(returnSelectedIds);
                                   if (next.has(row.id)) {
@@ -632,7 +632,7 @@ export function OverlayPage() {
                                 }}
                               >
                                 <td style={{ textAlign: 'center', padding: '7px 10px' }}>
-                                  <input type="checkbox" checked={checked} readOnly style={{ cursor: 'pointer', accentColor: '#c5221f' }} />
+                                  <input type="checkbox" checked={checked} readOnly style={{ cursor: 'pointer', accentColor: 'var(--danger)' }} />
                                 </td>
                                 <td style={{ padding: '7px 10px', fontWeight: 500, color: 'var(--text-1)', fontFamily: 'monospace', fontSize: 12 }}>{row.asset_id || '—'}</td>
                                 <td style={{ padding: '7px 10px', color: 'var(--text-2)', fontSize: 12 }}>{row.asset_type}</td>
@@ -700,7 +700,7 @@ export function OverlayPage() {
                 {assignments.map((a, i) => (
                   <tr
                     key={a.asset_row.id}
-                    style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? '#fff8f8' : 'transparent' }}
+                    style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? 'var(--danger-bg)' : 'transparent' }}
                   >
                     <td style={{ padding: '8px 10px' }}>
                       <div style={{ fontWeight: 500, color: 'var(--text-1)', fontSize: 12, fontFamily: 'monospace', display: 'flex', alignItems: 'center' }}>
@@ -735,7 +735,7 @@ export function OverlayPage() {
                         value={a.note}
                         onChange={e => setAssignments(prev => prev.map((x, j) => j === i ? { ...x, note: e.target.value } : x))}
                         placeholder="Optional note for this row…"
-                        style={{ width: '100%', fontSize: 12, borderColor: a.asset_row.is_return ? '#f4b8b4' : undefined }}
+                        style={{ width: '100%', fontSize: 12, borderColor: a.asset_row.is_return ? 'var(--danger)' : undefined }}
                       />
                     </td>
                   </tr>
@@ -780,7 +780,7 @@ export function OverlayPage() {
           </div>
 
           {calibError && (
-            <div style={{ padding: '10px 14px', background: '#fce8e6', color: '#c5221f', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
+            <div style={{ padding: '10px 14px', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
               <span className="icon icon-sm">error</span> {calibError}
             </div>
           )}
@@ -796,7 +796,7 @@ export function OverlayPage() {
                   {p.num_data_rows} data rows, {p.col_x0.length} cols
                 </div>
               ))}
-              <button style={{ marginTop: 8, fontSize: 12, color: 'var(--error)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => setCalibration(null)}>
+              <button style={{ marginTop: 8, fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => setCalibration(null)}>
                 Remove calibration (use defaults)
               </button>
             </div>
@@ -839,8 +839,8 @@ export function OverlayPage() {
               </thead>
               <tbody>
                 {assignments.map(a => (
-                  <tr key={a.asset_row.id} style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? '#fff8f8' : 'transparent' }}>
-                    <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 600, color: a.asset_row.is_return ? '#c5221f' : 'var(--primary)' }}>{a.page}·{a.target_row}</td>
+                  <tr key={a.asset_row.id} style={{ borderTop: '1px solid var(--border)', background: a.asset_row.is_return ? 'var(--danger-bg)' : 'transparent' }}>
+                    <td style={{ padding: '7px 10px', textAlign: 'center', fontWeight: 600, color: a.asset_row.is_return ? 'var(--danger)' : 'var(--primary)' }}>{a.page}·{a.target_row}</td>
                     <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 12, color: 'var(--text-1)' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         {a.asset_row.asset_id || '—'}
@@ -850,7 +850,7 @@ export function OverlayPage() {
                     <td style={{ padding: '7px 10px', color: 'var(--text-2)' }}>{a.asset_row.asset_type}</td>
                     <td style={{ padding: '7px 10px', color: 'var(--text-2)' }}>{a.asset_row.brand} {a.asset_row.model}</td>
                     <td style={{ padding: '7px 10px', color: 'var(--text-3)', fontSize: 12 }}>{a.asset_row.serial_number}</td>
-                    <td style={{ padding: '7px 10px', color: a.asset_row.is_return ? '#c5221f' : 'var(--text-2)', fontSize: 12, fontStyle: a.note ? 'normal' : 'italic' }}>
+                    <td style={{ padding: '7px 10px', color: a.asset_row.is_return ? 'var(--danger)' : 'var(--text-2)', fontSize: 12, fontStyle: a.note ? 'normal' : 'italic' }}>
                       {a.note || '—'}
                     </td>
                   </tr>
@@ -860,7 +860,7 @@ export function OverlayPage() {
           </div>
 
           {assignments.some(a => a.asset_row.is_return) && (
-            <div style={{ padding: '10px 14px', background: '#fce8e6', border: '1px solid #f4b8b4', borderRadius: 8, fontSize: 13, color: '#c5221f', marginBottom: 12 }}>
+            <div style={{ padding: '10px 14px', background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 8, fontSize: 13, color: 'var(--danger)', marginBottom: 12 }}>
               <span className="icon icon-sm">undo</span>
               {' '}{assignments.filter(a => a.asset_row.is_return).length} return row(s) included — you'll be asked whether to update the database when generating.
             </div>
@@ -879,7 +879,7 @@ export function OverlayPage() {
             </div>
           )}
 
-          <div style={{ background: '#fff8e1', border: '1px solid #f9ab00', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#b06000', marginBottom: 16 }}>
+          <div style={{ background: 'var(--warn-bg)', border: '1px solid var(--warn)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--warn)', marginBottom: 16 }}>
             <span className="icon icon-sm">warning</span>
             Load the already-printed sheet back into the printer before printing this overlay PDF.
           </div>
@@ -943,7 +943,7 @@ export function OverlayPage() {
                     </span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                       {printLog.printed_ids.map(id => (
-                        <span key={id} style={{ fontSize: 12, background: '#ceead6', color: '#1e7e34', padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace' }}>{id}</span>
+                        <span key={id} style={{ fontSize: 12, background: 'var(--success-bg)', color: 'var(--success)', padding: '2px 8px', borderRadius: 10, fontFamily: 'monospace' }}>{id}</span>
                       ))}
                     </div>
                   </div>
@@ -971,7 +971,7 @@ export function OverlayPage() {
                   <span className="icon icon-sm">check_circle</span>
                   Mark current selection as printed
                 </button>
-                <button className="md-btn" onClick={handleClearLog} style={{ color: 'var(--error)', border: '1px solid var(--border)' }}>
+                <button className="md-btn" onClick={handleClearLog} style={{ color: 'var(--danger)', border: '1px solid var(--border)' }}>
                   <span className="icon icon-sm">delete</span>
                   Clear log
                 </button>
@@ -1003,9 +1003,9 @@ export function OverlayPage() {
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
               {assignments.filter(a => a.asset_row.is_return).map(a => (
-                <div key={a.asset_row.id} style={{ fontSize: 12, background: '#fce8e6', color: '#c5221f', padding: '3px 10px', borderRadius: 10 }}>
+                <div key={a.asset_row.id} style={{ fontSize: 12, background: 'var(--danger-bg)', color: 'var(--danger)', padding: '3px 10px', borderRadius: 10 }}>
                   <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.asset_row.asset_id}</span>
-                  <span style={{ marginLeft: 6, color: '#a0463a', fontSize: 11 }}>{a.note}</span>
+                  <span style={{ marginLeft: 6, color: 'var(--danger)', fontSize: 11, opacity: 0.75 }}>{a.note}</span>
                 </div>
               ))}
             </div>
@@ -1021,7 +1021,7 @@ export function OverlayPage() {
                 className="md-btn md-btn-primary"
                 disabled={returningToDb}
                 onClick={handleReturnInDbAndGenerate}
-                style={{ background: '#c5221f', borderColor: '#c5221f' }}
+                style={{ background: 'var(--danger)', borderColor: 'var(--danger)', color: '#fff' }}
               >
                 <span className="icon icon-sm">{returningToDb ? 'sync' : 'undo'}</span>
                 {returningToDb ? 'Returning…' : 'Return in DB + Download'}
