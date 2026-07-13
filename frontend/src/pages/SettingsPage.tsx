@@ -1,8 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, useRef, type FormEvent } from 'react'
 import { NavLink } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { useToast } from '../App'
+import type { OverlayConfig, OverlayDefaults } from '../lib/types'
 
 const isElectron = typeof window !== 'undefined' && !!(window as any).assetManager
 
@@ -58,6 +59,17 @@ export default function SettingsPage() {
     (localStorage.getItem('asset-theme') as 'light' | 'dark') || 'dark'
   )
 
+  // Overlay calibration state
+  const [overlayConfig,       setOverlayConfig]       = useState<OverlayConfig | null>(null)
+  const [overlayHasOverrides, setOverlayHasOverrides] = useState(false)
+  const [overlayP1Y,          setOverlayP1Y]          = useState('')
+  const [overlayP2Y,          setOverlayP2Y]          = useState('')
+  const [overlayRowH,         setOverlayRowH]         = useState('')
+  const [overlaySaving,       setOverlaySaving]       = useState(false)
+  const [overlayDocxLoading,  setOverlayDocxLoading]  = useState(false)
+  const [overlayMsg,          setOverlayMsg]          = useState('')
+  const overlayDocxRef = useRef<HTMLInputElement>(null)
+
   function toggleTheme() {
     const next = theme === 'light' ? 'dark' : 'light'
     document.documentElement.classList.toggle('dark', next === 'dark')
@@ -65,6 +77,19 @@ export default function SettingsPage() {
     ;(window as any).assetManager?.setTheme?.(next).catch?.(() => {})
     setThemeState(next)
   }
+
+  function applyOverlayConfig(cfg: OverlayConfig) {
+    setOverlayConfig(cfg)
+    setOverlayP1Y(String(cfg.table_data_start_y_mm))
+    setOverlayP2Y(String(cfg.table_data_start_y_mm_page2))
+    setOverlayRowH(String(cfg.row_height_mm))
+  }
+
+  useEffect(() => {
+    api.getOverlayDefaults()
+      .then(r => { applyOverlayConfig(r.config); setOverlayHasOverrides(r.has_user_overrides) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     api.getSyncStatus().then(setSyncStatus).catch(() => {}).finally(() => setSyncLoading(false))
@@ -142,6 +167,82 @@ export default function SettingsPage() {
       if (r?.ok) showToast('Checking for updates — result will appear shortly', 'info')
       else showToast(r?.error || 'Update check failed', 'error')
     } catch (e) { showToast(e instanceof Error ? e.message : 'Update check failed', 'error') }
+  }
+
+  async function handleOverlaySave() {
+    const p1y  = parseFloat(overlayP1Y)
+    const p2y  = parseFloat(overlayP2Y)
+    const rowh = parseFloat(overlayRowH)
+    if (isNaN(p1y) || isNaN(p2y) || isNaN(rowh)) {
+      setOverlayMsg('Enter valid numbers for all three fields.')
+      return
+    }
+    setOverlaySaving(true)
+    setOverlayMsg('')
+    try {
+      const r = await api.saveOverlayDefaults({
+        table_data_start_y_mm: p1y,
+        table_data_start_y_mm_page2: p2y,
+        row_height_mm: rowh,
+      })
+      applyOverlayConfig(r.config)
+      setOverlayHasOverrides(true)
+      setOverlayMsg('Calibration saved.')
+    } catch (e) {
+      setOverlayMsg(e instanceof Error ? e.message : 'Save failed')
+    } finally { setOverlaySaving(false) }
+  }
+
+  async function handleOverlayReset() {
+    if (!window.confirm('Reset calibration to factory defaults?')) return
+    setOverlaySaving(true)
+    setOverlayMsg('')
+    try {
+      const r = await api.resetOverlayDefaults()
+      applyOverlayConfig(r.config)
+      setOverlayHasOverrides(false)
+      setOverlayMsg('Reset to factory defaults.')
+    } catch (e) {
+      setOverlayMsg(e instanceof Error ? e.message : 'Reset failed')
+    } finally { setOverlaySaving(false) }
+  }
+
+  async function handleOverlayDocx(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setOverlayDocxLoading(true)
+    setOverlayMsg('')
+    try {
+      const res = await api.calibrateFromDocx(file)
+      const calib = res.calibration
+      // Apply column values to effective config and save
+      const p1 = calib[1]
+      const p2 = calib[2]
+      const toSave: OverlayDefaults = {}
+      if (p1) {
+        toSave.col_x_mm = p1.col_x0
+        toSave.col_w_mm = p1.col_w
+        toSave.row_height_mm = p1.avg_row_h
+        // Pre-fill Y inputs from docx estimate (user can fine-tune)
+        setOverlayP1Y(String(p1.data_start_y))
+        toSave.table_data_start_y_mm = p1.data_start_y
+      }
+      if (p2) {
+        setOverlayP2Y(String(p2.data_start_y))
+        toSave.table_data_start_y_mm_page2 = p2.data_start_y
+      }
+      if (Object.keys(toSave).length) {
+        const r = await api.saveOverlayDefaults(toSave)
+        applyOverlayConfig(r.config)
+        setOverlayHasOverrides(true)
+      }
+      setOverlayMsg(`Columns calibrated from Word doc (${p1?.col_x0?.length ?? '?'} cols). Check & save Y positions below.`)
+    } catch (err) {
+      setOverlayMsg(err instanceof Error ? err.message : 'Docx calibration failed')
+    } finally {
+      setOverlayDocxLoading(false)
+      if (overlayDocxRef.current) overlayDocxRef.current.value = ''
+    }
   }
 
   const Field = ({ label, field, type = 'text', placeholder }: { label: string; field: keyof Config; type?: string; placeholder?: string }) => (
@@ -334,6 +435,99 @@ export default function SettingsPage() {
             </button>
           </Card>
         )}
+
+        {/* Overlay Calibration */}
+        <Card title="Overlay calibration">
+          <p style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 0, marginBottom: 16, lineHeight: 1.6 }}>
+            Fine-tune where the overlay PDF prints text on your physical forms.
+            Upload the Word template to auto-detect column widths, then adjust Y positions to match your printed form.
+            {overlayHasOverrides && (
+              <span style={{ marginLeft: 6, fontSize: 12, background: 'var(--primary-bg)', color: 'var(--primary)', padding: '1px 7px', borderRadius: 10 }}>custom</span>
+            )}
+          </p>
+
+          {/* Docx upload */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, background: 'var(--primary-bg)', color: 'var(--primary)', cursor: overlayDocxLoading ? 'not-allowed' : 'pointer', border: '1px solid var(--primary)', opacity: overlayDocxLoading ? 0.6 : 1 }}>
+              <span className="icon icon-sm">description</span>
+              {overlayDocxLoading ? 'Reading template…' : 'Auto-calibrate from Word template (.docx)'}
+              <input ref={overlayDocxRef} type="file" accept=".docx" style={{ display: 'none' }} onChange={handleOverlayDocx} disabled={overlayDocxLoading} />
+            </label>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
+              Uploads the handover/return .docx — extracts exact column widths from the table XML.
+            </div>
+          </div>
+
+          {/* Y position inputs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Page 1 — data Y start (mm)</label>
+              <input
+                className="md-input"
+                type="number"
+                step="0.1"
+                value={overlayP1Y}
+                onChange={e => setOverlayP1Y(e.target.value)}
+                placeholder={String(overlayConfig?.table_data_start_y_mm ?? 156.7)}
+              />
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>mm from top of page to first data row</div>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Page 2 — data Y start (mm)</label>
+              <input
+                className="md-input"
+                type="number"
+                step="0.1"
+                value={overlayP2Y}
+                onChange={e => setOverlayP2Y(e.target.value)}
+                placeholder={String(overlayConfig?.table_data_start_y_mm_page2 ?? 61.6)}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 4 }}>Row height (mm)</label>
+              <input
+                className="md-input"
+                type="number"
+                step="0.01"
+                value={overlayRowH}
+                onChange={e => setOverlayRowH(e.target.value)}
+                placeholder={String(overlayConfig?.row_height_mm ?? 16.055)}
+              />
+            </div>
+          </div>
+
+          {overlayMsg && (
+            <div style={{ fontSize: 13, padding: '8px 12px', borderRadius: 8, marginBottom: 12, background: overlayMsg.includes('failed') || overlayMsg.includes('valid') ? 'var(--danger-bg)' : 'var(--success-bg)', color: overlayMsg.includes('failed') || overlayMsg.includes('valid') ? 'var(--danger)' : 'var(--success)' }}>
+              {overlayMsg}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="md-btn md-btn-primary" onClick={handleOverlaySave} disabled={overlaySaving}>
+              {overlaySaving ? <><span className="icon icon-sm" style={{ animation: 'spin .8s linear infinite' }}>sync</span>Saving…</> : <><span className="icon icon-sm">save</span>Save Y positions</>}
+            </button>
+            <a
+              href="/api/overlay/calibration-grid"
+              download="calibration_grid.pdf"
+              className="md-btn md-btn-outlined"
+              style={{ textDecoration: 'none', display: 'inline-flex' }}
+            >
+              <span className="icon icon-sm">grid_on</span>Download calibration grid
+            </a>
+            {overlayHasOverrides && (
+              <button className="md-btn" onClick={handleOverlayReset} style={{ color: 'var(--danger)', marginLeft: 'auto' }}>
+                <span className="icon icon-sm">restart_alt</span>Reset to factory
+              </button>
+            )}
+          </div>
+
+          {overlayConfig && (
+            <div style={{ marginTop: 14, fontSize: 12, color: 'var(--text-3)', background: 'var(--surface-2)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.8 }}>
+              <strong style={{ color: 'var(--text-2)' }}>Active:</strong>{' '}
+              P1 Y={overlayConfig.table_data_start_y_mm}mm · P2 Y={overlayConfig.table_data_start_y_mm_page2}mm · row={overlayConfig.row_height_mm}mm · {overlayConfig.col_x_mm?.length ?? 0} cols
+            </div>
+          )}
+        </Card>
 
         {/* Application */}
         <Card title="Application">

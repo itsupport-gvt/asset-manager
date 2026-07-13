@@ -1,4 +1,4 @@
-import type { Asset, Employee, AssignRequest, ReturnRequest, CreateAssetRequest, ReportPreview, OverlayConfig, CalibrationData, OverlayRow, PrintLogEntry, ActivityLogPage } from './types';
+import type { Asset, Employee, AssignRequest, ReturnRequest, CreateAssetRequest, ReportPreview, OverlayConfig, CalibrationData, OverlayRow, PrintLogEntry, ActivityLogPage, OverlayDefaults } from './types';
 
 // ── Per-launch app token (Electron IPC secret) ────────────────────────────────
 let _cachedToken: string | null | undefined = undefined
@@ -150,6 +150,42 @@ export const api = {
 
   // ── Overlay ──────────────────────────────────────────────────────────────
   overlayConfig: () => req<OverlayConfig>('/api/overlay/config'),
+
+  getOverlayDefaults: () =>
+    req<{ config: OverlayConfig; factory: OverlayConfig; has_user_overrides: boolean; user_overrides: OverlayDefaults }>(
+      '/api/overlay/defaults'
+    ),
+
+  saveOverlayDefaults: (defaults: OverlayDefaults) =>
+    req<{ saved: boolean; config: OverlayConfig }>('/api/overlay/defaults', json(defaults)),
+
+  resetOverlayDefaults: async (): Promise<{ reset: boolean; config: OverlayConfig }> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = {}
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
+    const res = await fetch('/api/overlay/defaults', { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(res.statusText)
+    return res.json()
+  },
+
+  calibrateFromDocx: async (file: File): Promise<{ calibration: CalibrationData }> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = {}
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/overlay/calibrate-docx', { method: 'POST', headers, body: form })
+    if (!res.ok) {
+      let detail = res.statusText
+      try { detail = (await res.json()).detail ?? detail } catch { /* ignore */ }
+      throw new Error(detail)
+    }
+    return res.json()
+  },
 
   calibrateFromPdf: async (file: File): Promise<{ calibration: CalibrationData }> => {
     const appToken = await getAppToken()

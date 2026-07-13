@@ -263,17 +263,24 @@ export function OverlayPage() {
   }
 
   // ── Calibration upload ─────────────────────────────────────────────────────
+  const [calibSource, setCalibSource] = React.useState<'pdf' | 'docx' | null>(null);
+
   async function handleCalibUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setCalibError('');
     setCalibLoading(true);
     try {
-      const res = await api.calibrateFromPdf(file);
+      const isPdf = file.name.toLowerCase().endsWith('.pdf');
+      const res = isPdf
+        ? await api.calibrateFromPdf(file)
+        : await api.calibrateFromDocx(file);
       setCalibration(res.calibration);
+      setCalibSource(isPdf ? 'pdf' : 'docx');
     } catch (err: any) {
       setCalibError(err.message || 'Calibration failed');
       setCalibration(null);
+      setCalibSource(null);
     }
     setCalibLoading(false);
   }
@@ -768,15 +775,19 @@ export function OverlayPage() {
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, background: 'var(--primary-bg)', color: 'var(--primary)', cursor: 'pointer', border: '1px solid var(--primary)' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, fontSize: 13, fontWeight: 500, background: 'var(--primary-bg)', color: 'var(--primary)', cursor: calibLoading ? 'not-allowed' : 'pointer', border: '1px solid var(--primary)', opacity: calibLoading ? 0.7 : 1 }}>
               <span className="icon icon-sm">upload_file</span>
-              {calibLoading ? 'Reading PDF…' : 'Upload form PDF to calibrate'}
-              <input type="file" accept=".pdf" style={{ display: 'none' }} onChange={handleCalibUpload} disabled={calibLoading} />
+              {calibLoading ? 'Reading…' : 'Upload .docx or PDF to calibrate'}
+              <input type="file" accept=".pdf,.docx" style={{ display: 'none' }} onChange={handleCalibUpload} disabled={calibLoading} />
             </label>
             <button className="md-btn" onClick={handleCalibGridDownload} style={{ fontSize: 13 }} title="Download a ruler grid PDF for manual measurement">
               <span className="icon icon-sm">grid_on</span>
               Download calibration grid
             </button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>
+            <span className="icon icon-sm" style={{ verticalAlign: 'middle', marginRight: 4 }}>info</span>
+            Upload the Word <strong>.docx</strong> template for precise column calibration, or a generated <strong>.pdf</strong> for full layout calibration. To set permanent defaults, use <strong>Settings → Overlay calibration</strong>.
           </div>
 
           {calibError && (
@@ -788,7 +799,7 @@ export function OverlayPage() {
           {calibration ? (
             <div style={{ padding: '12px 16px', background: 'var(--success-bg)', borderRadius: 10, fontSize: 13 }}>
               <div style={{ fontWeight: 600, color: 'var(--success)', marginBottom: 6 }}>
-                <span className="icon icon-sm">check_circle</span> Calibration loaded from PDF
+                <span className="icon icon-sm">check_circle</span> Calibration loaded from {calibSource === 'docx' ? 'Word document' : 'PDF'}
               </div>
               {Object.entries(calibration).map(([pageNum, p]) => (
                 <div key={pageNum} style={{ color: 'var(--text-2)', marginTop: 4 }}>
@@ -870,11 +881,13 @@ export function OverlayPage() {
             <span className="icon icon-sm" style={{ verticalAlign: 'middle', marginRight: 4 }}>
               {calibration ? 'check_circle' : 'info'}
             </span>
-            {calibration ? 'Using calibration from uploaded PDF' : 'Using baked-in default calibration'}
+            {calibration
+              ? `Using calibration from uploaded ${calibSource === 'docx' ? 'Word document' : 'PDF'}`
+              : 'Using default calibration (configure in Settings → Overlay calibration)'}
           </div>
 
           {genError && (
-            <div style={{ padding: '10px 14px', background: '#fce8e6', color: '#c5221f', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
+            <div style={{ padding: '10px 14px', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
               <span className="icon icon-sm">error</span> {genError}
             </div>
           )}
@@ -1011,7 +1024,7 @@ export function OverlayPage() {
             </div>
 
             {returnDbError && (
-              <div style={{ padding: '8px 12px', background: '#fce8e6', color: '#c5221f', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
+              <div style={{ padding: '8px 12px', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
                 <span className="icon icon-sm">error</span> {returnDbError}
               </div>
             )}

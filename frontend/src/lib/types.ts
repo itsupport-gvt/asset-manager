@@ -149,6 +149,16 @@ export interface PrintLogEntry {
     history: { timestamp: string; added_ids: string[] }[];
 }
 
+export interface OverlayDefaults {
+    table_data_start_y_mm?: number;
+    table_data_start_y_mm_page2?: number;
+    row_height_mm?: number;
+    col_x_mm?: number[];
+    col_w_mm?: number[];
+    font_size?: number;
+    rows_per_page1?: number;
+}
+
 // ── Activity Log ─────────────────────────────────────────────────────────────
 
 export interface ActivityLogItem {
