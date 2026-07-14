@@ -411,14 +411,12 @@ export default function SettingsPage() {
           <p style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 0, marginBottom: 16 }}>
             Export the full activity log as a CSV file.
           </p>
-          <a
-            href="/api/activity/export"
-            download="activity_log.csv"
+          <button
             className="md-btn md-btn-outlined"
-            style={{ display: 'inline-flex', textDecoration: 'none' }}
+            onClick={() => api.exportActivity({ format: 'csv' }).catch(() => {})}
           >
             <span className="icon icon-sm">table_view</span>Export activity log
-          </a>
+          </button>
         </Card>
 
         {/* Schema migration (Admin only) */}

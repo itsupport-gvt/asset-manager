@@ -31,11 +31,8 @@ function fmtTime(iso: string): string {
   });
 }
 
-function triggerDownload(url: string) {
-  const a = document.createElement('a');
-  a.href = url;
-  a.click();
-}
+// kept for reference; actual downloads now use api.exportActivity()
+function triggerDownload(_url: string) { void _url; }
 
 interface ChangedField { field: string; old: string; new: string; }
 
@@ -216,14 +213,15 @@ export function ActivityLogPage() {
   }
 
   function handleExport() {
-    triggerDownload(api.exportActivityCsvUrl({
+    api.exportActivity({
       action:    filterAction,
       employee:  filterEmployee,
       asset_id:  filterAssetId,
       from_date: filterFrom,
       to_date:   filterTo,
       q:         filterQ,
-    }));
+      format:    'csv',
+    }).catch(() => {});
   }
 
   const hasFilters = filterQ || filterAction || filterEmployee || filterAssetId || filterFrom || filterTo;

@@ -78,6 +78,28 @@ async function syncReq<T>(path: string): Promise<T> {
 
 const BASE = '';  // same origin — Vite proxies to backend in dev, served by FastAPI in prod
 
+/** Fetch a binary endpoint with auth headers and trigger a browser download. */
+export async function downloadAuthenticated(url: string, filename: string): Promise<void> {
+  const appToken = await getAppToken()
+  const msToken  = await getMsToken()
+  const headers: Record<string, string> = {}
+  if (appToken) headers['X-App-Token']   = appToken
+  if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
+  const res = await fetch(BASE + url, { headers })
+  if (!res.ok) {
+    let detail = res.statusText
+    try { detail = (await res.json()).detail ?? detail } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  const blob = await res.blob()
+  const objUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objUrl
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(objUrl)
+}
+
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const appToken = await getAppToken()
   const msToken  = await getMsToken()
@@ -311,6 +333,40 @@ export const api = {
     return `/api/activity/export${qs ? '?' + qs : ''}`;
   },
 
+  exportActivity: (params: {
+    action?: string; employee?: string; asset_id?: string;
+    from_date?: string; to_date?: string; q?: string; format?: 'csv' | 'xlsx';
+  }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))
+    ).toString()
+    const ext = params.format === 'xlsx' ? 'xlsx' : 'csv'
+    const ts = new Date().toISOString().slice(0,10)
+    return downloadAuthenticated(`/api/activity/export${qs ? '?' + qs : ''}`, `activity_log_${ts}.${ext}`)
+  },
+
+  exportInventory: (params: {
+    q?: string; status?: string; type?: string; condition?: string;
+    employee?: string; brand?: string; model?: string;
+    from_date?: string; to_date?: string; format?: 'csv' | 'xlsx';
+  }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))
+    ).toString()
+    const ext = params.format === 'xlsx' ? 'xlsx' : 'csv'
+    const ts = new Date().toISOString().slice(0,10)
+    return downloadAuthenticated(`/api/assets/export${qs ? '?' + qs : ''}`, `inventory_${ts}.${ext}`)
+  },
+
+  exportStats: (params: { from_date?: string; to_date?: string; format?: 'csv' | 'xlsx' }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))
+    ).toString()
+    const ext = params.format === 'xlsx' ? 'xlsx' : 'csv'
+    const ts = new Date().toISOString().slice(0,10)
+    return downloadAuthenticated(`/api/stats/export${qs ? '?' + qs : ''}`, `stats_summary_${ts}.${ext}`)
+  },
+
   // ── Sync: Pull Logs ────────────────────────────────────────────────────────
   pullLogs: () => syncReq<{ success: boolean; imported: number; skipped: number; total: number; message?: string; detail?: string }>('/api/sync/pull-logs'),
 
@@ -360,7 +416,7 @@ export const api = {
     return req<Record<string, unknown>>(`/api/stats${qs}`)
   },
 
-  // ── Asset export CSV ───────────────────────────────────────────────────────
+  // ── Asset export CSV (legacy URL helper — use exportInventory() instead) ──
   exportAssetsCsvUrl: (params: { q?: string; status?: string; type?: string }): string => {
     const qs = new URLSearchParams(
       Object.fromEntries(

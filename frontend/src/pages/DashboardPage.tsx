@@ -156,10 +156,7 @@ export function DashboardPage() {
   }
 
   function handleExportInventory() {
-    const url = api.exportAssetsCsvUrl({});
-    const a = document.createElement('a');
-    a.href = url;
-    a.click();
+    api.exportInventory({ format: 'csv' }).catch(() => {});
   }
 
   if (loading) return (

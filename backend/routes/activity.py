@@ -4,7 +4,7 @@ Covers: Assign, Return, Create, Update, and any other logged actions.
 
 Endpoints:
   GET /api/activity        — paginated + filtered log
-  GET /api/activity/export — CSV download of filtered log (no pagination)
+  GET /api/activity/export — CSV or XLSX download of filtered log (no pagination)
 """
 
 import csv
@@ -12,12 +12,13 @@ import io
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
 from database import get_db
 from models_db import DBAssignmentLog, DBAsset, DBEmployee
+from routes.assets import _make_xlsx
 
 router = APIRouter(prefix="/api", tags=["activity"])
 
@@ -184,42 +185,55 @@ def list_activity(
 
 
 @router.get("/activity/export")
-def export_activity_csv(
+def export_activity(
     action:    str = Query(default=""),
     employee:  str = Query(default=""),
     asset_id:  str = Query(default=""),
     from_date: str = Query(default=""),
     to_date:   str = Query(default=""),
     q:         str = Query(default=""),
+    fmt:       str = Query(default="csv", alias="format"),
     db: Session = Depends(get_db),
 ):
-    """
-    Export the full filtered activity log as CSV (no pagination).
-    Response: text/csv with Content-Disposition: attachment.
-    """
-    rows = _build_query(db, action, employee, asset_id, from_date, to_date, q).all()
+    """Export the full filtered activity log as CSV or XLSX (no pagination)."""
+    log_rows = _build_query(db, action, employee, asset_id, from_date, to_date, q).all()
 
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow([
+    HEADERS = [
         "ID", "Timestamp", "Action",
         "Asset ID", "Asset Type", "Asset Label",
         "Employee Email", "Employee Name",
         "Old Status", "New Status",
         "Changed Fields", "Notes",
-    ])
-    for row in rows:
-        e = _enrich(row, db)
-        writer.writerow([
+    ]
+
+    enriched = [_enrich(r, db) for r in log_rows]
+    data_rows = [
+        [
             e["id"], e["timestamp"], e["action"],
             e["asset_id"], e["asset_type"], e["asset_label"],
             e["employee_email"], e["employee_name"],
             e["old_status"], e["new_status"],
             e["changed_fields"], e["notes"],
-        ])
+        ]
+        for e in enriched
+    ]
 
-    buf.seek(0)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if fmt == "xlsx":
+        xlsx_bytes = _make_xlsx(f"Activity Log ({ts})", HEADERS, data_rows)
+        return Response(
+            content=xlsx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="activity_log_{ts}.xlsx"'},
+        )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(HEADERS)
+    for row in data_rows:
+        writer.writerow(row)
+    buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",

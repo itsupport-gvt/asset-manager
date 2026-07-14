@@ -8,6 +8,54 @@ from config import MASTER_TABLE
 
 router = APIRouter(prefix="/api")
 
+
+def _make_xlsx(sheet_title: str, headers: list, rows: list) -> bytes:
+    """Build a styled XLSX workbook and return raw bytes."""
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = sheet_title[:31]  # Excel sheet name limit
+
+    header_fill = PatternFill(start_color="1A73E8", end_color="1A73E8", fill_type="solid")
+    header_font = Font(name="Calibri", color="FFFFFF", bold=True, size=10)
+    thin = Side(style="thin", color="D0D0D0")
+    cell_border = Border(bottom=thin)
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    ws.row_dimensions[1].height = 28
+
+    for row_idx, row in enumerate(rows, 2):
+        for col_idx, value in enumerate(row, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = cell_border
+            cell.alignment = Alignment(vertical="center")
+            if row_idx % 2 == 0:
+                cell.fill = PatternFill(start_color="F8F9FA", end_color="F8F9FA", fill_type="solid")
+
+    # Auto-fit column widths (capped at 40)
+    for col_idx, header in enumerate(headers, 1):
+        col_letter = openpyxl.utils.get_column_letter(col_idx)
+        max_len = max(
+            len(str(header)),
+            max((len(str(row[col_idx - 1])) for row in rows if row), default=0),
+        )
+        ws.column_dimensions[col_letter].width = min(max_len + 2, 40)
+
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
 def _db_asset_to_response(asset: DBAsset, db: Session) -> AssetResponse:
     emp_display = ""
     if asset.assigned_to_email:
@@ -72,11 +120,12 @@ async def get_asset(asset_id: str, db: Session = Depends(get_db)):
 
 @router.get("/field-values")
 async def field_values(db: Session = Depends(get_db)):
-    """Returns sorted unique non-empty values for brand, model, vendor, and location."""
-    brands = db.query(DBAsset.brand).distinct().all()
-    models = db.query(DBAsset.model).distinct().all()
-    vendors = db.query(DBAsset.vendor).distinct().all()
-    locations = db.query(DBAsset.location).distinct().all()
+    """Returns sorted unique non-empty values for brand, model, vendor, location, and asset_types."""
+    brands      = db.query(DBAsset.brand).distinct().all()
+    models      = db.query(DBAsset.model).distinct().all()
+    vendors     = db.query(DBAsset.vendor).distinct().all()
+    locations   = db.query(DBAsset.location).distinct().all()
+    asset_types = db.query(DBAsset.asset_type).distinct().all()
 
     def clean(vals):
         res = set()
@@ -86,10 +135,11 @@ async def field_values(db: Session = Depends(get_db)):
         return sorted(list(res), key=str.lower)
 
     return {
-        "brand": clean(brands),
-        "model": clean(models),
-        "vendor": clean(vendors),
-        "location": clean(locations),
+        "brand":       clean(brands),
+        "model":       clean(models),
+        "vendor":      clean(vendors),
+        "location":    clean(locations),
+        "asset_types": clean(asset_types),
     }
 
 @router.get("/asset-suggestions")
@@ -188,25 +238,67 @@ async def sync_single_asset(asset_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/assets/export")
-async def export_assets_csv(
-    q:           str = Query(default=""),
-    status:      str = Query(default=""),
-    asset_type:  str = Query(default="", alias="type"),
+async def export_assets(
+    q:          str = Query(default=""),
+    status:     str = Query(default=""),
+    asset_type: str = Query(default="", alias="type"),
+    condition:  str = Query(default=""),
+    employee:   str = Query(default=""),
+    brand:      str = Query(default=""),
+    model:      str = Query(default=""),
+    from_date:  str = Query(default=""),
+    to_date:    str = Query(default=""),
+    fmt:        str = Query(default="csv", alias="format"),
     db: Session = Depends(get_db),
 ):
     """
-    Export filtered asset inventory as a CSV download.
-    Params: q (text search), status, type (asset type)
+    Export filtered asset inventory as CSV or XLSX.
+    Params: q, status, type, condition, employee, brand, model, from_date, to_date, format
     """
     import csv, io
     from datetime import datetime
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import StreamingResponse, Response
 
     query = db.query(DBAsset)
     if status:
         query = query.filter(DBAsset.status.ilike(status))
     if asset_type:
         query = query.filter(DBAsset.asset_type.ilike(asset_type))
+    if condition:
+        query = query.filter(DBAsset.condition.ilike(condition))
+    if brand:
+        query = query.filter(DBAsset.brand.ilike(f"%{brand}%"))
+    if model:
+        query = query.filter(DBAsset.model.ilike(f"%{model}%"))
+    if employee:
+        pattern = f"%{employee}%"
+        emp_emails = [
+            e.email for e in
+            db.query(DBEmployee).filter(
+                or_(
+                    DBEmployee.email.ilike(pattern),
+                    DBEmployee.full_name.ilike(pattern),
+                    DBEmployee.employee_id.ilike(pattern),
+                    DBEmployee.employee_display.ilike(pattern),
+                )
+            ).all()
+        ]
+        query = query.filter(
+            or_(
+                DBAsset.assigned_to_email.ilike(pattern),
+                DBAsset.assigned_to_email.in_(emp_emails),
+            )
+        )
+    if from_date:
+        try:
+            query = query.filter(DBAsset.date_assigned >= from_date)
+        except Exception:
+            pass
+    if to_date:
+        try:
+            query = query.filter(DBAsset.date_assigned <= to_date)
+        except Exception:
+            pass
     if q:
         pattern = f"%{q}%"
         query = query.filter(
@@ -219,37 +311,57 @@ async def export_assets_csv(
                 DBAsset.assigned_to_email.ilike(pattern),
             )
         )
+
     assets = query.order_by(DBAsset.asset_type, DBAsset.asset_id).all()
+
+    # Build emp display cache
+    emp_cache: dict[str, str] = {}
+    for a in assets:
+        if a.assigned_to_email and a.assigned_to_email not in emp_cache:
+            emp = db.query(DBEmployee).filter(DBEmployee.email == a.assigned_to_email).first()
+            emp_cache[a.assigned_to_email] = (emp.employee_display or emp.full_name or "") if emp else ""
+
+    HEADERS = [
+        "Asset ID", "Asset Type", "Status", "Condition", "Brand", "Model",
+        "Serial Number", "Assigned To (Email)", "Assigned To (Name)", "Assignment ID",
+        "Date Assigned", "Location", "Storage", "Storage 2", "RAM", "Processor",
+        "Graphics", "Screen Size", "OS", "Purchase Date", "Purchase Price",
+        "Vendor", "Invoice Ref", "Warranty End", "Notes",
+        "Charger Model", "Charger Serial", "Charger Notes",
+    ]
+
+    def _row(a: DBAsset) -> list:
+        return [
+            a.asset_id or "", a.asset_type or "", a.status or "", a.condition or "",
+            a.brand or "", a.model or "", a.serial_number or "",
+            a.assigned_to_email or "", emp_cache.get(a.assigned_to_email or "", ""),
+            a.assignment_id or "", a.date_assigned or "", a.location or "",
+            a.storage or "", a.storage_2 or "", a.memory_ram or "", a.processor or "",
+            a.graphics or "", a.screen_size or "", a.os or "",
+            a.purchase_date or "", a.purchase_price or "",
+            a.vendor or "", a.invoice_ref or "", a.warranty_end or "",
+            a.notes or "", a.charger_model or "", a.charger_serial or "",
+            a.charger_notes or "",
+        ]
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if fmt == "xlsx":
+        xlsx_bytes = _make_xlsx(f"Inventory ({ts})", HEADERS, [_row(a) for a in assets])
+        return Response(
+            content=xlsx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="inventory_{ts}.xlsx"'},
+        )
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow([
-        "Asset ID", "Asset Type", "Status", "Condition", "Brand", "Model",
-        "Serial Number", "Assigned To", "Employee Display", "Assignment ID",
-        "Date Assigned", "Location", "Storage", "RAM", "Purchase Date",
-        "Purchase Price", "Vendor", "Invoice Ref", "Warranty End", "Notes",
-        "Charger Model", "Charger Serial",
-    ])
+    writer.writerow(HEADERS)
     for a in assets:
-        emp_display = ""
-        if a.assigned_to_email:
-            emp = db.query(DBEmployee).filter(DBEmployee.email == a.assigned_to_email).first()
-            if emp:
-                emp_display = emp.employee_display or emp.full_name or ""
-        writer.writerow([
-            a.asset_id or "", a.asset_type or "", a.status or "", a.condition or "",
-            a.brand or "", a.model or "", a.serial_number or "",
-            a.assigned_to_email or "", emp_display, a.assignment_id or "",
-            a.date_assigned or "", a.location or "", a.storage or "",
-            a.memory_ram or "", a.purchase_date or "", a.purchase_price or "",
-            a.vendor or "", a.invoice_ref or "", a.warranty_end or "",
-            a.notes or "", a.charger_model or "", a.charger_serial or "",
-        ])
-
+        writer.writerow(_row(a))
     buf.seek(0)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="assets_{ts}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="inventory_{ts}.csv"'},
     )

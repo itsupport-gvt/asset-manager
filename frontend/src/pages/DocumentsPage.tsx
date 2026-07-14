@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { ReportPage } from './ReportPage';
 import { OverlayPage } from './OverlayPage';
+import { ExportPage } from './ExportPage';
 
-type DocTab = 'report' | 'overlay';
+type DocTab = 'report' | 'overlay' | 'export';
 
 const TABS: { key: DocTab; label: string; icon: string }[] = [
   { key: 'report',  label: 'Report Generator', icon: 'picture_as_pdf' },
   { key: 'overlay', label: 'Print Overlay',     icon: 'print'          },
+  { key: 'export',  label: 'Data Export',       icon: 'download'       },
 ];
 
 export function DocumentsPage() {
@@ -60,6 +62,9 @@ export function DocumentsPage() {
       </div>
       <div style={{ display: activeTab === 'overlay' ? 'block' : 'none' }}>
         <OverlayPage />
+      </div>
+      <div style={{ display: activeTab === 'export' ? 'block' : 'none' }}>
+        <ExportPage />
       </div>
 
     </div>
