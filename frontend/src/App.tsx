@@ -106,10 +106,11 @@ function SyncButton({ showToast }: { showToast: (msg: string, type?: ToastType) 
     try {
       if (action === 'push') {
         const r = await api.pushToExcel()
-        showToast(r.message || 'Pushed to SharePoint', 'success')
+        const hasFailures = (r as any).assets_failed > 0 || (r as any).logs_failed > 0
+        showToast(r.message || 'Pushed to SharePoint', hasFailures ? 'error' : 'success')
       } else {
-        await fetch('/api/sync/pull', { method: 'POST', headers: await _tokenHeaders() })
-        showToast('Pulled from SharePoint', 'success')
+        const r = await api.pullFromExcel()
+        showToast(r.message || 'Pulled from SharePoint', 'success')
       }
       const s = await api.getSyncStatus(); setPending(s.pending_changes)
       document.dispatchEvent(new CustomEvent('sync-status-changed'))

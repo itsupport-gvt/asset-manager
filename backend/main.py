@@ -14,7 +14,7 @@ from pathlib import Path
 # ── Frozen (PyInstaller) vs dev path resolution ──────────────────────────────
 _BASE = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).parent
 
-from fastapi import FastAPI, WebSocket, BackgroundTasks, Depends, Header
+from fastapi import FastAPI, WebSocket, BackgroundTasks, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -166,11 +166,24 @@ def push_sync(
     """Pushes local pending changes up to Excel using the signed-in user's Graph token."""
     try:
         graph = _graph_from_header(x_ms_graph_token)
-        sync_to_excel(db, graph)
-        return {"success": True, "message": "Pushed changes to Excel."}
+        result = sync_to_excel(db, graph)
+        ap, af = result["assets_pushed"], result["assets_failed"]
+        lp, lf = result["logs_pushed"],   result["logs_failed"]
+        parts = []
+        if ap or af:
+            parts.append(f"{ap} asset{'s' if ap != 1 else ''}" + (f" ({af} failed)" if af else ""))
+        if lp or lf:
+            parts.append(f"{lp} log entr{'ies' if lp != 1 else 'y'}" + (f" ({lf} failed)" if lf else ""))
+        if not parts:
+            msg = "Nothing pending — already up to date."
+        else:
+            msg = "Pushed to Excel: " + ", ".join(parts)
+            if af or lf:
+                msg += " — some items failed, check logs"
+        return {"success": True, "message": msg, **result}
     except Exception as e:
         traceback.print_exc()
-        return {"success": False, "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/sync/pull")
 def pull_sync(
@@ -182,14 +195,14 @@ def pull_sync(
         graph = _graph_from_header(x_ms_graph_token)
         sync_from_excel(db, graph)
         log_result = sync_logs_from_excel(db, graph)
-        return {
-            "success": True,
-            "message": f"Pulled from Excel. Imported {log_result['imported']} new log entries.",
-            **log_result,
-        }
+        n = log_result["imported"]
+        msg = "Pulled from Excel"
+        if n:
+            msg += f" — {n} new log entr{'y' if n == 1 else 'ies'} imported"
+        return {"success": True, "message": msg, **log_result}
     except Exception as e:
         traceback.print_exc()
-        return {"success": False, "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/sync/pull-logs")
 def pull_logs_sync(
@@ -203,7 +216,7 @@ def pull_logs_sync(
         return {"success": True, "message": f"Imported {result['imported']} logs, skipped {result['skipped']} duplicates.", **result}
     except Exception as e:
         traceback.print_exc()
-        return {"success": False, "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sync/status")
 def sync_status(db: Session = Depends(get_db)):

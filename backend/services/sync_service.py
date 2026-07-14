@@ -435,12 +435,18 @@ def sync_logs_from_excel(db: Session, graph: GraphClient) -> dict:
         raise
 
 
-def sync_to_excel(db: Session, graph: GraphClient):
+def sync_to_excel(db: Session, graph: GraphClient) -> dict:
     """
     Pushes all local changes (needs_sync=True) back to the Excel workbook via Graph API.
     - Assets: updates the matching row in MasterTable by asset_id, or appends if new.
     - Logs:   appends new assignment/action log entries to Assignment_Log table.
+    Returns {"assets_pushed", "assets_failed", "logs_pushed", "logs_failed"}.
     """
+    assets_pushed = 0
+    assets_failed = 0
+    logs_pushed   = 0
+    logs_failed   = 0
+
     # ── 1. Push pending asset changes ─────────────────────────────────────────
     pending_assets = db.query(DBAsset).filter(DBAsset.needs_sync == True).all()
     if not pending_assets:
@@ -456,9 +462,8 @@ def sync_to_excel(db: Session, graph: GraphClient):
             }
         except Exception as e:
             print(f"[sync_to_excel] ERROR: Could not fetch MasterTable headers/rows: {e}")
-            return
+            raise
 
-        pushed = 0
         for asset in pending_assets:
             emp = db.query(DBEmployee).filter(
                 DBEmployee.email == asset.assigned_to_email
@@ -527,19 +532,19 @@ def sync_to_excel(db: Session, graph: GraphClient):
                 else:
                     graph.add_table_row(MASTER_TABLE, field_map, headers)
                 asset.needs_sync = False
-                pushed += 1
+                assets_pushed += 1
             except Exception as e:
                 print(f"[sync_to_excel] ERROR pushing asset {asset.asset_id}: {e}")
+                assets_failed += 1
 
         db.commit()
-        print(f"[sync_to_excel] Pushed {pushed}/{len(pending_assets)} assets.")
+        print(f"[sync_to_excel] Pushed {assets_pushed}/{len(pending_assets)} assets ({assets_failed} failed).")
 
     # ── 2. Push pending assignment logs ───────────────────────────────────────
     try:
         pending_logs = db.query(DBAssignmentLog).filter(DBAssignmentLog.needs_sync == True).all()
         if pending_logs:
             log_headers = graph.get_table_headers(LOG_TABLE)
-            pushed_logs = 0
             for log in pending_logs:
                 is_assign = log.action and "assign" in log.action.lower()
                 log_asset = db.query(DBAsset).filter(DBAsset.asset_id == log.asset_id).first()
@@ -564,13 +569,21 @@ def sync_to_excel(db: Session, graph: GraphClient):
                 }
                 try:
                     graph.add_table_row(LOG_TABLE, log_map, log_headers)
-                    # Store LogID back so future pull-logs won't re-import this entry
                     log.source_log_id = log_id
                     log.needs_sync = False
-                    pushed_logs += 1
+                    logs_pushed += 1
                 except Exception as e:
                     print(f"[sync_to_excel] ERROR pushing log {log.id}: {e}")
+                    logs_failed += 1
             db.commit()
-            print(f"[sync_to_excel] Pushed {pushed_logs}/{len(pending_logs)} log entries.")
+            print(f"[sync_to_excel] Pushed {logs_pushed}/{len(pending_logs)} log entries ({logs_failed} failed).")
     except Exception as e:
         print(f"[sync_to_excel] WARNING: Could not push assignment logs: {e}")
+        logs_failed += 1
+
+    return {
+        "assets_pushed": assets_pushed,
+        "assets_failed": assets_failed,
+        "logs_pushed":   logs_pushed,
+        "logs_failed":   logs_failed,
+    }
