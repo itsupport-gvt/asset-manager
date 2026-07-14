@@ -259,13 +259,19 @@ async def export_assets(
     from datetime import datetime
     from fastapi.responses import StreamingResponse, Response
 
+    def _multi(raw: str) -> list[str]:
+        return [v.strip() for v in raw.split(",") if v.strip()]
+
     query = db.query(DBAsset)
     if status:
-        query = query.filter(DBAsset.status.ilike(status))
+        vals = _multi(status)
+        query = query.filter(DBAsset.status.in_(vals) if len(vals) > 1 else DBAsset.status.ilike(vals[0]))
     if asset_type:
-        query = query.filter(DBAsset.asset_type.ilike(asset_type))
+        vals = _multi(asset_type)
+        query = query.filter(DBAsset.asset_type.in_(vals) if len(vals) > 1 else DBAsset.asset_type.ilike(vals[0]))
     if condition:
-        query = query.filter(DBAsset.condition.ilike(condition))
+        vals = _multi(condition)
+        query = query.filter(DBAsset.condition.in_(vals) if len(vals) > 1 else DBAsset.condition.ilike(vals[0]))
     if brand:
         query = query.filter(DBAsset.brand.ilike(f"%{brand}%"))
     if model:

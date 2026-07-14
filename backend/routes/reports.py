@@ -40,6 +40,7 @@ TEMPLATES = {
 
 FIELD_LABELS = {
     "asset_id":      "Asset ID",
+    "checkbox":      "✓",          # empty column for recipient to tick each item
     "asset_type":    "Item",
     "brand":         "Brand",
     "model":         "Model",
@@ -50,7 +51,13 @@ FIELD_LABELS = {
     "os":            "OS",
     "location":      "Location",
     "notes":         "Notes",
+    "comments":      "Comments",   # empty column for written remarks
 }
+# Canonical order — determines column sequence regardless of selection order
+FIELD_ORDER = [
+    "asset_id", "checkbox", "asset_type", "brand", "model", "serial_number",
+    "storage", "memory_ram", "processor", "os", "location", "notes", "comments",
+]
 _DEFAULT_FIELDS = ["asset_id", "asset_type", "brand", "model", "serial_number", "notes"]
 
 
@@ -139,6 +146,8 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
 
     if not included_fields:
         included_fields = list(_DEFAULT_FIELDS)
+    # Enforce canonical column order regardless of what the frontend sent
+    included_fields = [f for f in FIELD_ORDER if f in included_fields]
     headers = [FIELD_LABELS.get(f, f) for f in included_fields] + ["Sign"]
     n_cols = len(headers)
 

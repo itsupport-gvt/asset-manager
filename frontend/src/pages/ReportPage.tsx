@@ -540,30 +540,36 @@ export function ReportPage() {
             <div style={{ padding: '16px 20px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
                 {[
-                  { key: 'asset_id',     label: 'Asset ID'   },
-                  { key: 'asset_type',   label: 'Item'        },
-                  { key: 'brand',        label: 'Brand'       },
-                  { key: 'model',        label: 'Model'       },
-                  { key: 'serial_number',label: 'Serial No.'  },
-                  { key: 'storage',      label: 'Storage'     },
-                  { key: 'memory_ram',   label: 'RAM'         },
-                  { key: 'processor',    label: 'Processor'   },
-                  { key: 'os',           label: 'OS'          },
-                  { key: 'location',     label: 'Location'    },
-                  { key: 'notes',        label: 'Notes'       },
+                  { key: 'asset_id',      label: 'Asset ID'         },
+                  { key: 'checkbox',      label: 'Checkbox col (✓)', hint: '2nd col, blank for signing' },
+                  { key: 'asset_type',    label: 'Item'              },
+                  { key: 'brand',         label: 'Brand'             },
+                  { key: 'model',         label: 'Model'             },
+                  { key: 'serial_number', label: 'Serial No.'        },
+                  { key: 'storage',       label: 'Storage'           },
+                  { key: 'memory_ram',    label: 'RAM'               },
+                  { key: 'processor',     label: 'Processor'         },
+                  { key: 'os',            label: 'OS'                },
+                  { key: 'location',      label: 'Location'          },
+                  { key: 'notes',         label: 'Notes'             },
+                  { key: 'comments',      label: 'Comments col',     hint: 'blank column at end' },
                 ].map(f => (
-                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-1)' }}>
+                  <label key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-1)' }}>
                     <input
                       type="checkbox"
                       checked={includedFields.includes(f.key)}
                       onChange={e => {
-                        setIncludedFields(prev =>
-                          e.target.checked ? [...prev, f.key] : prev.filter(k => k !== f.key)
-                        );
+                        const FIELD_ORDER = ['asset_id','checkbox','asset_type','brand','model','serial_number','storage','memory_ram','processor','os','location','notes','comments'];
+                        const next = new Set(includedFields);
+                        if (e.target.checked) next.add(f.key); else next.delete(f.key);
+                        setIncludedFields(FIELD_ORDER.filter(k => next.has(k)));
                       }}
-                      style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+                      style={{ accentColor: 'var(--primary)', width: 15, height: 15, marginTop: 2, flexShrink: 0 }}
                     />
-                    {f.label}
+                    <span>
+                      {f.label}
+                      {'hint' in f && <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.3 }}>{f.hint}</span>}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -573,7 +579,7 @@ export function ReportPage() {
                   style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
                 >Reset to default</button>
                 <button
-                  onClick={() => setIncludedFields(['asset_id','asset_type','brand','model','serial_number','storage','memory_ram','processor','os','location','notes'])}
+                  onClick={() => setIncludedFields(['asset_id','checkbox','asset_type','brand','model','serial_number','storage','memory_ram','processor','os','location','notes','comments'])}
                   style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
                 >Select all</button>
               </div>

@@ -4,7 +4,7 @@
  * Each supports CSV and Excel (.xlsx) with authenticated downloads.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
 
 // ── Shared styles ────────────────────────────────────────────────────────────
@@ -36,9 +36,92 @@ const selStyle: React.CSSProperties = {
   outline: 'none',
 };
 
-const STATUSES = ['In Stock', 'Assigned', 'Under Repair', 'Damaged', 'Retired', 'Lost'];
+const STATUSES   = ['In Stock', 'Assigned', 'Under Repair', 'Damaged', 'Retired', 'Lost'];
 const CONDITIONS = ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'Damaged'];
-const ACTIONS = ['Assigned', 'Returned', 'Created', 'Updated', 'Swap'];
+const ACTIONS    = ['Assigned', 'Returned', 'Created', 'Updated', 'Swap'];
+
+// ── MultiSelectDropdown ───────────────────────────────────────────────────────
+
+function MultiSelectDropdown({
+  options, selected, onChange, placeholder,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (vals: string[]) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const allSelected = selected.length === options.length;
+  const label = selected.length === 0
+    ? `All ${placeholder}s`
+    : allSelected ? `All ${placeholder}s`
+    : selected.length === 1 ? selected[0]
+    : `${selected.length} selected`;
+
+  const toggle = (opt: string) =>
+    onChange(selected.includes(opt) ? selected.filter(v => v !== opt) : [...selected, opt]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: '100%', padding: '9px 12px', border: '1px solid var(--border)',
+          borderRadius: 8, background: 'var(--surface)',
+          color: selected.length && !allSelected ? 'var(--text-1)' : 'var(--text-3)',
+          fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          cursor: 'pointer', textAlign: 'left', gap: 6,
+        }}
+      >
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span className="icon icon-sm" style={{ color: 'var(--text-3)', flexShrink: 0 }}>{open ? 'expand_less' : 'expand_more'}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 300,
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+          boxShadow: '0 6px 20px rgba(0,0,0,.14)', maxHeight: 260, overflowY: 'auto', padding: 4,
+        }}>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+            cursor: 'pointer', fontSize: 12, color: 'var(--text-2)',
+            borderBottom: '1px solid var(--border)', marginBottom: 3,
+          }}>
+            <input
+              type="checkbox" checked={allSelected}
+              onChange={e => onChange(e.target.checked ? [...options] : [])}
+              style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+            />
+            Select all
+          </label>
+          {options.map(opt => (
+            <label key={opt} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
+              cursor: 'pointer', fontSize: 13, color: 'var(--text-1)', borderRadius: 6,
+            }}>
+              <input
+                type="checkbox" checked={selected.includes(opt)}
+                onChange={() => toggle(opt)}
+                style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+              />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── FormatButtons ─────────────────────────────────────────────────────────────
 
@@ -120,20 +203,26 @@ function FilterField({ label, children }: { label: string; children: React.React
 // ── Inventory section ─────────────────────────────────────────────────────────
 
 function InventoryExport({ assetTypes }: { assetTypes: string[] }) {
-  const [q,         setQ]         = useState('');
-  const [status,    setStatus]    = useState('');
-  const [type,      setType]      = useState('');
-  const [condition, setCondition] = useState('');
-  const [employee,  setEmployee]  = useState('');
-  const [brand,     setBrand]     = useState('');
-  const [model,     setModel]     = useState('');
-  const [fromDate,  setFromDate]  = useState('');
-  const [toDate,    setToDate]    = useState('');
-  const [busy,      setBusy]      = useState(false);
-  const [err,       setErr]       = useState('');
+  const [q,          setQ]          = useState('');
+  const [statuses,   setStatuses]   = useState<string[]>([]);
+  const [types,      setTypes]      = useState<string[]>([]);
+  const [conditions, setConditions] = useState<string[]>([]);
+  const [employee,   setEmployee]   = useState('');
+  const [brand,      setBrand]      = useState('');
+  const [model,      setModel]      = useState('');
+  const [fromDate,   setFromDate]   = useState('');
+  const [toDate,     setToDate]     = useState('');
+  const [busy,       setBusy]       = useState(false);
+  const [err,        setErr]        = useState('');
 
   function params(format: 'csv' | 'xlsx') {
-    return { q, status, type, condition, employee, brand, model, from_date: fromDate, to_date: toDate, format };
+    return {
+      q,
+      status:    statuses.length && statuses.length < STATUSES.length   ? statuses.join(',')   : '',
+      type:      types.length    && types.length    < assetTypes.length ? types.join(',')      : '',
+      condition: conditions.length && conditions.length < CONDITIONS.length ? conditions.join(',') : '',
+      employee, brand, model, from_date: fromDate, to_date: toDate, format,
+    };
   }
 
   async function download(format: 'csv' | 'xlsx') {
@@ -144,11 +233,12 @@ function InventoryExport({ assetTypes }: { assetTypes: string[] }) {
   }
 
   function clearFilters() {
-    setQ(''); setStatus(''); setType(''); setCondition('');
+    setQ(''); setStatuses([]); setTypes([]); setConditions([]);
     setEmployee(''); setBrand(''); setModel(''); setFromDate(''); setToDate('');
   }
 
-  const hasFilters = q || status || type || condition || employee || brand || model || fromDate || toDate;
+  const hasFilters = q || statuses.length || types.length || conditions.length
+    || employee || brand || model || fromDate || toDate;
 
   return (
     <div style={cardStyle}>
@@ -164,24 +254,15 @@ function InventoryExport({ assetTypes }: { assetTypes: string[] }) {
         </FilterField>
 
         <FilterField label="Status">
-          <select value={status} onChange={e => setStatus(e.target.value)} style={selStyle}>
-            <option value="">All statuses</option>
-            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <MultiSelectDropdown options={STATUSES} selected={statuses} onChange={setStatuses} placeholder="status" />
         </FilterField>
 
         <FilterField label="Asset Type">
-          <select value={type} onChange={e => setType(e.target.value)} style={selStyle}>
-            <option value="">All types</option>
-            {assetTypes.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
+          <MultiSelectDropdown options={assetTypes} selected={types} onChange={setTypes} placeholder="type" />
         </FilterField>
 
         <FilterField label="Condition">
-          <select value={condition} onChange={e => setCondition(e.target.value)} style={selStyle}>
-            <option value="">All conditions</option>
-            {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelectDropdown options={CONDITIONS} selected={conditions} onChange={setConditions} placeholder="condition" />
         </FilterField>
 
         <FilterField label="Assigned to (name or email)">
@@ -224,7 +305,7 @@ function InventoryExport({ assetTypes }: { assetTypes: string[] }) {
 
 function ActivityExport() {
   const [q,        setQ]        = useState('');
-  const [action,   setAction]   = useState('');
+  const [actions,  setActions]  = useState<string[]>([]);
   const [employee, setEmployee] = useState('');
   const [assetId,  setAssetId]  = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -233,7 +314,11 @@ function ActivityExport() {
   const [err,      setErr]      = useState('');
 
   function params(format: 'csv' | 'xlsx') {
-    return { q, action, employee, asset_id: assetId, from_date: fromDate, to_date: toDate, format };
+    return {
+      q,
+      action: actions.length && actions.length < ACTIONS.length ? actions.join(',') : '',
+      employee, asset_id: assetId, from_date: fromDate, to_date: toDate, format,
+    };
   }
 
   async function download(format: 'csv' | 'xlsx') {
@@ -244,10 +329,10 @@ function ActivityExport() {
   }
 
   function clearFilters() {
-    setQ(''); setAction(''); setEmployee(''); setAssetId(''); setFromDate(''); setToDate('');
+    setQ(''); setActions([]); setEmployee(''); setAssetId(''); setFromDate(''); setToDate('');
   }
 
-  const hasFilters = q || action || employee || assetId || fromDate || toDate;
+  const hasFilters = q || actions.length || employee || assetId || fromDate || toDate;
 
   return (
     <div style={cardStyle}>
@@ -263,10 +348,7 @@ function ActivityExport() {
         </FilterField>
 
         <FilterField label="Action type">
-          <select value={action} onChange={e => setAction(e.target.value)} style={selStyle}>
-            <option value="">All actions</option>
-            {ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <MultiSelectDropdown options={ACTIONS} selected={actions} onChange={setActions} placeholder="action" />
         </FilterField>
 
         <FilterField label="Employee (name or email)">

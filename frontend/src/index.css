@@ -411,6 +411,29 @@ input:-webkit-autofill, input:-webkit-autofill:focus {
 }
 
 /* ============================================================================
+   Global keyboard-focus ring — Tab navigation highlight
+   :focus-visible shows only when navigating by keyboard, not on mouse click.
+*/
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* md-input/select/textarea already use border + box-shadow — suppress duplicate ring */
+.md-input:focus-visible,
+.md-select:focus-visible,
+.md-textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent), 0 0 0 1px var(--primary);
+}
+/* Checkbox / radio: tighter offset */
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ============================================================================
    Animations
 */
 @keyframes spin   { to { transform: rotate(360deg); } }

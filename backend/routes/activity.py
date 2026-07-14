@@ -38,7 +38,11 @@ def _build_query(
     query = db.query(DBAssignmentLog)
 
     if action:
-        query = query.filter(DBAssignmentLog.action.ilike(f"%{action}%"))
+        vals = [v.strip() for v in action.split(",") if v.strip()]
+        if len(vals) > 1:
+            query = query.filter(DBAssignmentLog.action.in_(vals))
+        else:
+            query = query.filter(DBAssignmentLog.action.ilike(f"%{vals[0]}%"))
 
     if employee:
         pattern = f"%{employee}%"
