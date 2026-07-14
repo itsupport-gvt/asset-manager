@@ -655,7 +655,7 @@ export function EmployeePage() {
     const encodedEmail = encodeURIComponent(targetEmail);
     Promise.all([
       api.getEmployees().then(res => setEmp(res.find(e => e.email === targetEmail) || null)),
-      fetch(`/api/employee/${encodedEmail}/assets`).then(r => r.json()),
+      api.getEmployeeAssets(targetEmail),
     ])
       .then(([_, myAssets]) => { setAssets(myAssets); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });

@@ -169,9 +169,8 @@ export function AssetDetailPage() {
   async function syncAsset(assetId: string) {
     setSyncing(true); setSyncMsg('');
     try {
-      const r = await fetch(`/api/asset/${encodeURIComponent(assetId)}/sync`, { method: 'POST' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || 'Sync failed');
+      const d = await api.syncAsset(assetId);
+      if (!d.success) throw new Error(d.message || 'Sync failed');
       setSyncMsg('Synced to Excel ✓');
     } catch (e: any) {
       setSyncMsg(e.message || 'Sync failed');

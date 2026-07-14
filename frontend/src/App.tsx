@@ -470,7 +470,7 @@ function ScannerQRButton({ connected }: { connected: boolean }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch('/api/scanner-url').then(r => r.json()).then(d => setUrl(d.url)).catch(() => {});
+    api.getScannerUrl().then(d => setUrl(d.url)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -689,18 +689,12 @@ function AppInner() {
 
       try {
         if (action === 'assign') {
-          fetch('/api/asset/assign', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Assigned via mobile scanner' })
-          }).then(() => { showToast(`Assigned ${assetId}`); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
+          api.assignAsset({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Assigned via mobile scanner' })
+            .then(() => { showToast(`Assigned ${assetId}`); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
         } else if (action === 'swap' && oldAsset) {
-          fetch('/api/asset/return', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asset_id: oldAsset, employee_email: userStr, condition: '', notes: 'Swapped via scanner' })
-          }).then(() => fetch('/api/asset/assign', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Swapped via scanner' })
-          })).then(() => { showToast('Swapped assets'); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
+          api.returnAsset({ asset_id: oldAsset, employee_email: userStr, condition: '', notes: 'Swapped via scanner' })
+            .then(() => api.assignAsset({ asset_id: assetId, employee_email: userStr, condition: '', notes: 'Swapped via scanner' }))
+            .then(() => { showToast('Swapped assets'); navigate(`/employee/${encodeURIComponent(userStr)}`); setScannerContext?.(null); });
         }
       } catch (e) { console.error('Context action failed', e); }
       return;

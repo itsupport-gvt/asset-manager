@@ -137,8 +137,11 @@ export const api = {
     return req<Asset[]>(`/api/assets/search?${qs}`);
   },
   getEmployees: () => req<Employee[]>('/api/employees'),
+  getEmployeeAssets: (email: string) => req<Asset[]>(`/api/employee/${encodeURIComponent(email)}/assets`),
   assignAsset: (body: AssignRequest) => req<{ success: boolean; assignment_id: string }>('/api/asset/assign', json(body)),
   returnAsset: (body: ReturnRequest) => req<{ success: boolean; returned_from: string }>('/api/asset/return', json(body)),
+  syncAsset: (assetId: string) => req<{ success: boolean; message: string }>(`/api/asset/${encodeURIComponent(assetId)}/sync`, { method: 'POST' }),
+  getScannerUrl: () => req<{ url: string; ip: string; scheme: string; via_ngrok: boolean }>('/api/scanner-url'),
   createAsset: (body: CreateAssetRequest) => req<{ success: boolean; asset_id: string; asset_id_qr: string }>('/api/asset/create', json(body)),
   createEmployee: (body: any) => req<{ success: boolean; email: string }>('/api/employee/create', json(body)),
   fieldValues: () => req<Record<string, string[]>>('/api/field-values'),
