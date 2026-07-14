@@ -130,6 +130,14 @@ export function ReportPage() {
   const [returnDbError,     setReturnDbError]     = useState('');
   const [pendingGenDocx,    setPendingGenDocx]    = useState(false);
 
+  // Type filter — null means "all types"
+  const [typeFilter, setTypeFilter] = useState<Set<string> | null>(null);
+  // Field selector
+  const [includedFields, setIncludedFields] = useState<string[]>([
+    'asset_id', 'asset_type', 'brand', 'model', 'serial_number', 'notes'
+  ]);
+  const [showFieldSelector, setShowFieldSelector] = useState(false);
+
   useEffect(() => {
     api.getEmployees().then(emps => setEmployees(emps.filter(e => !e.is_room)));
   }, []);
@@ -144,6 +152,7 @@ export function ReportPage() {
     setReturnItems([]);
     setShowReturns(false);
     setReturnSearch('');
+    setTypeFilter(null);
     api.reportPreview(selectedEmp.email)
       .then(p => setPreview(p))
       .catch(e => setPreviewError(e.message))
@@ -154,6 +163,23 @@ export function ReportPage() {
     employees.filter(e =>
       `${e.full_name} ${e.employee_id} ${e.email}`.toLowerCase().includes(search.toLowerCase())
     ), [employees, search]);
+
+  const assetTypes = useMemo(() =>
+    [...new Set((preview?.rows ?? []).filter(r => !r.is_charger).map(r => r.asset_type).filter(Boolean))].sort()
+  , [preview]);
+
+  const visibleRows = useMemo(() => {
+    if (!preview) return [];
+    if (!typeFilter) return preview.rows;
+    return preview.rows.filter((row, i, arr) => {
+      if (!row.is_charger) return typeFilter.has(row.asset_type);
+      // Charger: visible only if parent laptop is visible
+      for (let j = i - 1; j >= 0; j--) {
+        if (!arr[j].is_charger) return typeFilter.has(arr[j].asset_type);
+      }
+      return true;
+    });
+  }, [preview, typeFilter]);
 
   function toggleRow(row: ReportRow) {
     const key = row.asset_id || `charger-${row.model}-${row.serial_number}`;
@@ -171,20 +197,28 @@ export function ReportPage() {
 
   function selectAll() { setExcluded(new Set()); }
   function selectNone() {
-    const all = new Set((preview?.rows ?? []).map(r => r.asset_id || `charger-${r.model}-${r.serial_number}`));
+    const all = new Set(visibleRows.map(r => r.asset_id || `charger-${r.model}-${r.serial_number}`));
     setExcluded(all);
   }
 
-  const includedCount = (preview?.rows ?? []).filter(r => isChecked(r)).length;
+  const includedCount = visibleRows.filter(r => isChecked(r)).length;
 
   function buildBody() {
-    const excludedIds = (preview?.rows ?? [])
+    // Assets not matching the type filter are auto-excluded
+    const typeExcluded = typeFilter
+      ? (preview?.rows ?? [])
+          .filter(r => !r.is_charger && !typeFilter.has(r.asset_type))
+          .map(r => r.asset_id).filter(Boolean)
+      : [];
+    const checkExcluded = (preview?.rows ?? [])
       .filter(r => !isChecked(r)).map(r => r.asset_id).filter(Boolean);
+    const excludedIds = [...new Set([...typeExcluded, ...checkExcluded])];
     return {
       employee_email: selectedEmp!.email,
       doc_type: docType,
       excluded_ids: excludedIds,
       row_notes: rowNotes,
+      included_fields: includedFields,
       extra_rows: returnItems.map(r => ({
         asset_id: r.asset_id, asset_type: r.asset_type,
         brand: r.brand, model: r.model,
@@ -397,6 +431,50 @@ export function ReportPage() {
             )}
           </div>
 
+          {/* Asset type filter chips */}
+          {preview && assetTypes.length > 1 && (
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Filter:</span>
+              {/* "All" shortcut */}
+              <button
+                onClick={() => setTypeFilter(null)}
+                style={{
+                  padding: '3px 10px', borderRadius: 12, border: '1px solid var(--border)',
+                  fontSize: 12, cursor: 'pointer', fontWeight: typeFilter === null ? 600 : 400,
+                  background: typeFilter === null ? 'var(--primary)' : 'var(--surface)',
+                  color: typeFilter === null ? '#fff' : 'var(--text-2)',
+                }}
+              >All</button>
+              {assetTypes.map(t => {
+                const active = typeFilter === null || typeFilter.has(t);
+                return (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      if (typeFilter === null) {
+                        // Switch from "all" to only this type deselected
+                        const next = new Set(assetTypes);
+                        next.delete(t);
+                        setTypeFilter(next.size === assetTypes.length ? null : next);
+                      } else {
+                        const next = new Set(typeFilter);
+                        if (next.has(t)) { next.delete(t); } else { next.add(t); }
+                        setTypeFilter(next.size === assetTypes.length ? null : next);
+                      }
+                    }}
+                    style={{
+                      padding: '3px 10px', borderRadius: 12, border: '1px solid var(--border)',
+                      fontSize: 12, cursor: 'pointer', fontWeight: active ? 600 : 400,
+                      background: active ? 'var(--primary-bg)' : 'var(--surface)',
+                      color: active ? 'var(--primary)' : 'var(--text-3)',
+                      opacity: active ? 1 : 0.6,
+                    }}
+                  >{t}</button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Content */}
           <div style={{ minHeight: 80 }}>
             {loadingPreview && (
@@ -418,7 +496,7 @@ export function ReportPage() {
             )}
             {!loadingPreview && preview && preview.rows.length > 0 && (
               <div style={{ padding: '8px 4px' }}>
-                {preview.rows.map((row, i) => (
+                {visibleRows.map((row, i) => (
                   <AssetRowItem
                     key={`${row.asset_id}-${i}`}
                     row={row}
@@ -431,6 +509,76 @@ export function ReportPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Field / column selector ── */}
+      {selectedEmp && preview && (
+        <div className="md-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <button
+            onClick={() => setShowFieldSelector(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 20px', background: 'var(--surface)', border: 'none',
+              cursor: 'pointer', textAlign: 'left',
+              borderBottom: showFieldSelector ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            <span className="icon" style={{ color: 'var(--primary)', fontSize: 18 }}>view_column</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'Google Sans', sans-serif", fontWeight: 600, fontSize: 14, color: 'var(--text-1)' }}>
+                Report Columns
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 1 }}>
+                {includedFields.length} column{includedFields.length !== 1 ? 's' : ''} selected — Sign column always included
+              </div>
+            </div>
+            <span className="icon" style={{ fontSize: 18, color: 'var(--text-3)' }}>{showFieldSelector ? 'expand_less' : 'expand_more'}</span>
+          </button>
+
+          {showFieldSelector && (
+            <div style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                {[
+                  { key: 'asset_id',     label: 'Asset ID'   },
+                  { key: 'asset_type',   label: 'Item'        },
+                  { key: 'brand',        label: 'Brand'       },
+                  { key: 'model',        label: 'Model'       },
+                  { key: 'serial_number',label: 'Serial No.'  },
+                  { key: 'storage',      label: 'Storage'     },
+                  { key: 'memory_ram',   label: 'RAM'         },
+                  { key: 'processor',    label: 'Processor'   },
+                  { key: 'os',           label: 'OS'          },
+                  { key: 'location',     label: 'Location'    },
+                  { key: 'notes',        label: 'Notes'       },
+                ].map(f => (
+                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text-1)' }}>
+                    <input
+                      type="checkbox"
+                      checked={includedFields.includes(f.key)}
+                      onChange={e => {
+                        setIncludedFields(prev =>
+                          e.target.checked ? [...prev, f.key] : prev.filter(k => k !== f.key)
+                        );
+                      }}
+                      style={{ accentColor: 'var(--primary)', width: 15, height: 15 }}
+                    />
+                    {f.label}
+                  </label>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => setIncludedFields(['asset_id','asset_type','brand','model','serial_number','notes'])}
+                  style={{ fontSize: 12, color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                >Reset to default</button>
+                <button
+                  onClick={() => setIncludedFields(['asset_id','asset_type','brand','model','serial_number','storage','memory_ram','processor','os','location','notes'])}
+                  style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0' }}
+                >Select all</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

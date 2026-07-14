@@ -38,6 +38,21 @@ TEMPLATES = {
     "Return":   lambda: _find_template("return.docx"),
 }
 
+FIELD_LABELS = {
+    "asset_id":      "Asset ID",
+    "asset_type":    "Item",
+    "brand":         "Brand",
+    "model":         "Model",
+    "serial_number": "Serial No.",
+    "storage":       "Storage",
+    "memory_ram":    "RAM",
+    "processor":     "Processor",
+    "os":            "OS",
+    "location":      "Location",
+    "notes":         "Notes",
+}
+_DEFAULT_FIELDS = ["asset_id", "asset_type", "brand", "model", "serial_number", "notes"]
+
 
 def _output_dir(doc_type: str) -> Path:
     """Output folder: ASSET_DATA_DIR (Electron) → repo root sibling → backend/output/ (Docker)."""
@@ -67,25 +82,35 @@ def _asset_rows(assets: list[DBAsset]) -> list[dict]:
     rows = []
     for a in assets:
         rows.append({
-            "asset_id":     a.asset_id or "",
-            "asset_type":   a.asset_type or "",
-            "brand":        a.brand or "",
-            "model":        a.model or "",
+            "asset_id":      a.asset_id or "",
+            "asset_type":    a.asset_type or "",
+            "brand":         a.brand or "",
+            "model":         a.model or "",
             "serial_number": a.serial_number or "",
-            "notes":        a.notes or "",
-            "is_charger":   False,
+            "storage":       a.storage or "",
+            "memory_ram":    a.memory_ram or "",
+            "processor":     a.processor or "",
+            "os":            a.os or "",
+            "location":      a.location or "",
+            "notes":         a.notes or "",
+            "is_charger":    False,
         })
         # Auto-inject charger row for Laptops
         if a.asset_type == "Laptop" and (a.charger_model or a.charger_serial):
             charger_brand = (a.charger_model or "").split()[0] if (a.charger_model or "").split() else ""
             rows.append({
-                "asset_id":     "",
-                "asset_type":   "Laptop Charger",
-                "brand":        charger_brand,
-                "model":        a.charger_model or "",
+                "asset_id":      "",
+                "asset_type":    "Laptop Charger",
+                "brand":         charger_brand,
+                "model":         a.charger_model or "",
                 "serial_number": a.charger_serial or "",
-                "notes":        a.charger_notes or "",
-                "is_charger":   True,
+                "storage":       "",
+                "memory_ram":    "",
+                "processor":     "",
+                "os":            "",
+                "location":      "",
+                "notes":         a.charger_notes or "",
+                "is_charger":    True,
             })
     return rows
 
@@ -93,7 +118,8 @@ def _asset_rows(assets: list[DBAsset]) -> list[dict]:
 # ── docx table helpers (adapted from main-v2.py) ───────────────────────
 
 def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
-                     designation: str, doc_type: str) -> Path:
+                     designation: str, doc_type: str,
+                     included_fields: list[str] | None = None) -> Path:
     """Build and save the .docx file. Returns the saved Path (no PDF conversion)."""
     from docxtpl import DocxTemplate
     from docx.oxml import OxmlElement
@@ -111,9 +137,14 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
     out_docx = output_dir / f"{doc_type}_{clean_name}_{emp_id}.docx"
     out_pdf  = output_dir / f"{doc_type}_{clean_name}_{emp_id}.pdf"
 
+    if not included_fields:
+        included_fields = list(_DEFAULT_FIELDS)
+    headers = [FIELD_LABELS.get(f, f) for f in included_fields] + ["Sign"]
+    n_cols = len(headers)
+
     doc = DocxTemplate(str(template_path))
     sd  = doc.new_subdoc()
-    table = sd.add_table(rows=1, cols=7)
+    table = sd.add_table(rows=1, cols=n_cols)
 
     # Table borders
     tbl = table._tbl
@@ -167,7 +198,6 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
         trPr.append(th)
 
     # Header row
-    headers = ["Asset ID", "Item", "Brand", "Model", "Serial No.", "Notes", "Sign"]
     header_row = table.rows[0]
     _set_row_height(header_row, 500)
     _repeat_header(header_row)
@@ -186,15 +216,7 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
         new_row = table.add_row()
         _set_row_height(new_row, 900)
         _keep_together(new_row)
-        vals = [
-            row_data["asset_id"],
-            row_data["asset_type"],
-            row_data["brand"],
-            row_data["model"],
-            row_data["serial_number"],
-            row_data["notes"],
-            "",  # Signature blank
-        ]
+        vals = [row_data.get(f, "") for f in included_fields] + [""]  # "" = Signature blank
         for i, val in enumerate(vals):
             cell = new_row.cells[i]
             cell.text = val
@@ -211,7 +233,10 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
         empty_row = table.add_row()
         _set_row_height(empty_row, 900)
         _keep_together(empty_row)
-        for cell in empty_row.cells:
+        empty_vals = [""] * n_cols
+        for i, val in enumerate(empty_vals):
+            cell = empty_row.cells[i]
+            cell.text = val
             _vcenter(cell)
 
     context = {
@@ -227,10 +252,11 @@ def _build_docx_file(rows: list[dict], emp_name: str, emp_id: str,
 
 
 def _build_docx(rows: list[dict], emp_name: str, emp_id: str,
-                designation: str, doc_type: str) -> Path:
+                designation: str, doc_type: str,
+                included_fields: list[str] | None = None) -> Path:
     """Build .docx then convert to PDF. Returns the PDF Path."""
     from docx2pdf import convert
-    out_docx = _build_docx_file(rows, emp_name, emp_id, designation, doc_type)
+    out_docx = _build_docx_file(rows, emp_name, emp_id, designation, doc_type, included_fields)
     out_pdf  = out_docx.with_suffix(".pdf")
     convert(str(out_docx), str(out_pdf))
     return out_pdf
@@ -265,6 +291,10 @@ def report_preview(employee_email: str, db: Session = Depends(get_db)):
         },
         "rows": _asset_rows(assets),
         "asset_count": len(assets),
+        "available_fields": [
+            {"key": k, "label": v, "default": k in _DEFAULT_FIELDS}
+            for k, v in FIELD_LABELS.items()
+        ],
     }
 
 
@@ -276,11 +306,12 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
     Body: { "employee_email": str, "doc_type": "Handover"|"Return", "excluded_ids": [str] }
     Returns the PDF as a file download.
     """
-    employee_email = body.get("employee_email", "")
-    doc_type       = body.get("doc_type", "Handover")
-    excluded_ids   = set(body.get("excluded_ids", []))
+    employee_email  = body.get("employee_email", "")
+    doc_type        = body.get("doc_type", "Handover")
+    excluded_ids    = set(body.get("excluded_ids", []))
     # row_notes: {asset_id: note_text} — blank by default (not pulled from DB)
     row_notes: dict = body.get("row_notes", {})
+    included_fields = body.get("included_fields", None)
 
     if doc_type not in TEMPLATES:
         raise HTTPException(status_code=400, detail="doc_type must be 'Handover' or 'Return'")
@@ -313,6 +344,11 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
             "brand":         er.get("brand", ""),
             "model":         er.get("model", ""),
             "serial_number": er.get("serial_number", ""),
+            "storage":       "",
+            "memory_ram":    "",
+            "processor":     "",
+            "os":            "",
+            "location":      "",
             "notes":         er.get("notes", ""),
             "is_charger":    False,
         })
@@ -325,7 +361,7 @@ def generate_report(body: dict, db: Session = Depends(get_db)):
     designation = (emp.designation or "").title()
 
     try:
-        pdf_path = _build_docx(rows, emp_name, emp_id, designation, doc_type)
+        pdf_path = _build_docx(rows, emp_name, emp_id, designation, doc_type, included_fields)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
@@ -348,10 +384,11 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
     Body: { "employee_email": str, "doc_type": "Handover"|"Return", "excluded_ids": [str], "row_notes": {asset_id: str} }
     Returns the .docx as a file download (no PDF conversion required).
     """
-    employee_email = body.get("employee_email", "")
-    doc_type       = body.get("doc_type", "Handover")
-    excluded_ids   = set(body.get("excluded_ids", []))
+    employee_email  = body.get("employee_email", "")
+    doc_type        = body.get("doc_type", "Handover")
+    excluded_ids    = set(body.get("excluded_ids", []))
     row_notes: dict = body.get("row_notes", {})
+    included_fields = body.get("included_fields", None)
 
     if doc_type not in TEMPLATES:
         raise HTTPException(status_code=400, detail="doc_type must be 'Handover' or 'Return'")
@@ -382,6 +419,11 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
             "brand":         er.get("brand", ""),
             "model":         er.get("model", ""),
             "serial_number": er.get("serial_number", ""),
+            "storage":       "",
+            "memory_ram":    "",
+            "processor":     "",
+            "os":            "",
+            "location":      "",
             "notes":         er.get("notes", ""),
             "is_charger":    False,
         })
@@ -394,7 +436,7 @@ def generate_report_docx(body: dict, db: Session = Depends(get_db)):
     designation = (emp.designation or "").title()
 
     try:
-        docx_path = _build_docx_file(rows, emp_name, emp_id, designation, doc_type)
+        docx_path = _build_docx_file(rows, emp_name, emp_id, designation, doc_type, included_fields)
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

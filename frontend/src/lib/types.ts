@@ -109,6 +109,7 @@ export interface ReportPreview {
     };
     rows: ReportRow[];
     asset_count: number;
+    available_fields?: { key: string; label: string; default: boolean }[];
 }
 
 // ── Overlay / Print ──────────────────────────────────────────────────────────
