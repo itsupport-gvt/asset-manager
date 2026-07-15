@@ -59,6 +59,17 @@ export default function SettingsPage() {
     (localStorage.getItem('asset-theme') as 'light' | 'dark') || 'dark'
   )
 
+  // Mobile connection state
+  type ServerInfo = { local_url: string; ngrok_url: string; ngrok_active: boolean; scanners_connected: number; apps_connected: number }
+  const [serverInfo,       setServerInfo]       = useState<ServerInfo | null>(null)
+  const [serverInfoBusy,   setServerInfoBusy]   = useState(false)
+  const [ngrokBusy,        setNgrokBusy]        = useState(false)
+  const [ngrokError,       setNgrokError]       = useState('')
+  const [localQr,          setLocalQr]          = useState('')
+  const [ngrokQr,          setNgrokQr]          = useState('')
+  const [ngrokToken,       setNgrokToken]       = useState('')
+  const [showNgrokToken,   setShowNgrokToken]   = useState(false)
+
   // Overlay calibration state
   const [overlayConfig,       setOverlayConfig]       = useState<OverlayConfig | null>(null)
   const [overlayHasOverrides, setOverlayHasOverrides] = useState(false)
@@ -90,6 +101,11 @@ export default function SettingsPage() {
       .then(r => { applyOverlayConfig(r.config); setOverlayHasOverrides(r.has_user_overrides) })
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (isAdmin) loadServerInfo()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin])
 
   useEffect(() => {
     api.getSyncStatus().then(setSyncStatus).catch(() => {}).finally(() => setSyncLoading(false))
@@ -135,6 +151,57 @@ export default function SettingsPage() {
       showToast(r.message || `Imported ${r.imported} log entries`, r.success ? 'success' : 'error')
     } catch (e) { showToast(e instanceof Error ? e.message : 'Pull logs failed', 'error') }
     finally { setPullLogsBusy(false) }
+  }
+
+  async function loadQr(url: string, setter: (s: string) => void) {
+    try {
+      const blob = await api.getQrCode(url)
+      const prev = (setter as any)._prevUrl as string | undefined
+      if (prev) URL.revokeObjectURL(prev)
+      const objectUrl = URL.createObjectURL(blob)
+      ;(setter as any)._prevUrl = objectUrl
+      setter(objectUrl)
+    } catch { /* silently ignore */ }
+  }
+
+  async function loadServerInfo() {
+    setServerInfoBusy(true)
+    try {
+      const info = await api.getServerInfo()
+      setServerInfo(info)
+      loadQr(info.local_url, setLocalQr)
+      if (info.ngrok_url) loadQr(info.ngrok_url, setNgrokQr)
+    } catch { /* server may not support endpoint yet */ }
+    finally { setServerInfoBusy(false) }
+  }
+
+  async function handleStartNgrok() {
+    setNgrokBusy(true); setNgrokError('')
+    try {
+      const r = await api.startNgrok(ngrokToken || undefined)
+      const info = await api.getServerInfo()
+      setServerInfo(info)
+      if (info.ngrok_url) loadQr(info.ngrok_url, setNgrokQr)
+      showToast(`ngrok tunnel active: ${r.url}`, 'success')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to start ngrok'
+      setNgrokError(msg)
+    }
+    finally { setNgrokBusy(false) }
+  }
+
+  async function handleStopNgrok() {
+    setNgrokBusy(true); setNgrokError('')
+    try {
+      await api.stopNgrok()
+      const info = await api.getServerInfo()
+      setServerInfo(info)
+      setNgrokQr('')
+      showToast('ngrok tunnel stopped', 'info')
+    } catch (e) {
+      setNgrokError(e instanceof Error ? e.message : 'Failed to stop ngrok')
+    }
+    finally { setNgrokBusy(false) }
   }
 
   async function handleMarkAllForSync() {
@@ -393,6 +460,178 @@ export default function SettingsPage() {
             </button>
           </div>
         </Card>
+
+        {/* Mobile App Connection (Admin only) */}
+        {isAdmin && (
+          <Card title="Mobile app connection">
+            <p style={{ fontSize: 14, color: 'var(--text-2)', marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
+              Scan a QR code with the Android app to connect it to this server. The local network URL works on the same Wi-Fi.
+              Use ngrok for access from outside the LAN.
+            </p>
+
+            {serverInfoBusy && !serverInfo && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', fontSize: 13 }}>
+                <span className="icon icon-sm" style={{ animation: 'spin .8s linear infinite' }}>sync</span>
+                Loading server info…
+              </div>
+            )}
+
+            {serverInfo && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+                {/* Local network */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 12 }}>
+                    Local network (same Wi-Fi)
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+                    {localQr && (
+                      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 8, background: '#fff', flexShrink: 0 }}>
+                        <img src={localQr} alt="Local URL QR" style={{ width: 160, height: 160, display: 'block' }} />
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 10, wordBreak: 'break-all' }}>
+                        {serverInfo.local_url}
+                      </div>
+                      <button
+                        className="md-btn md-btn-outlined md-btn-sm"
+                        onClick={() => { navigator.clipboard.writeText(serverInfo.local_url); showToast('URL copied', 'success') }}
+                      >
+                        <span className="icon icon-sm">content_copy</span>Copy URL
+                      </button>
+                      <button
+                        className="md-btn md-btn-neutral md-btn-sm"
+                        style={{ marginLeft: 8 }}
+                        onClick={loadServerInfo}
+                        disabled={serverInfoBusy}
+                      >
+                        <span className="icon icon-sm" style={{ animation: serverInfoBusy ? 'spin .8s linear infinite' : 'none' }}>refresh</span>
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ngrok divider */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '.6px', whiteSpace: 'nowrap' }}>
+                    ngrok — remote / external access
+                  </span>
+                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                </div>
+
+                {/* ngrok active state */}
+                {serverInfo.ngrok_active ? (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)' }}>Tunnel active</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+                      {ngrokQr && (
+                        <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 8, background: '#fff', flexShrink: 0 }}>
+                          <img src={ngrokQr} alt="ngrok QR" style={{ width: 160, height: 160, display: 'block' }} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--text-1)', marginBottom: 10, wordBreak: 'break-all' }}>
+                          {serverInfo.ngrok_url}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            className="md-btn md-btn-outlined md-btn-sm"
+                            onClick={() => { navigator.clipboard.writeText(serverInfo.ngrok_url); showToast('URL copied', 'success') }}
+                          >
+                            <span className="icon icon-sm">content_copy</span>Copy URL
+                          </button>
+                          <button
+                            className="md-btn md-btn-danger md-btn-sm"
+                            onClick={handleStopNgrok}
+                            disabled={ngrokBusy}
+                          >
+                            <span className="icon icon-sm">{ngrokBusy ? 'hourglass_empty' : 'link_off'}</span>
+                            {ngrokBusy ? 'Stopping…' : 'Stop ngrok'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 0, marginBottom: 14, lineHeight: 1.6 }}>
+                      ngrok creates a public HTTPS URL for this server so the mobile app can connect from any network.
+                      A free <a href="https://ngrok.com" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>ngrok account</a> is required.
+                    </p>
+
+                    {/* Optional authtoken input */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2)' }}>
+                          ngrok authtoken <span style={{ fontWeight: 400, color: 'var(--text-3)' }}>(optional — only needed first time or when rotating)</span>
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          className="md-input"
+                          type={showNgrokToken ? 'text' : 'password'}
+                          value={ngrokToken}
+                          onChange={e => setNgrokToken(e.target.value)}
+                          placeholder="Paste authtoken from ngrok dashboard…"
+                          style={{ maxWidth: 380, fontSize: 13 }}
+                        />
+                        <button
+                          className="md-btn md-btn-neutral md-btn-sm"
+                          onClick={() => setShowNgrokToken(v => !v)}
+                          title={showNgrokToken ? 'Hide' : 'Show'}
+                        >
+                          <span className="icon icon-sm">{showNgrokToken ? 'visibility_off' : 'visibility'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      className="md-btn md-btn-tonal"
+                      onClick={handleStartNgrok}
+                      disabled={ngrokBusy}
+                    >
+                      <span className="icon icon-sm" style={{ animation: ngrokBusy ? 'spin .8s linear infinite' : 'none' }}>
+                        {ngrokBusy ? 'sync' : 'wifi_tethering'}
+                      </span>
+                      {ngrokBusy ? 'Starting tunnel…' : 'Start ngrok tunnel'}
+                    </button>
+                  </div>
+                )}
+
+                {ngrokError && (
+                  <div style={{ padding: '10px 14px', background: 'var(--danger-bg)', color: 'var(--danger)', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <span className="icon icon-sm" style={{ flexShrink: 0, marginTop: 1 }}>error</span>
+                    <span>{ngrokError}</span>
+                  </div>
+                )}
+
+                {/* WebSocket status */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 8 }}>
+                  <span className="icon icon-sm" style={{ color: 'var(--text-3)' }}>hub</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                    WebSocket clients connected:&nbsp;
+                    <strong style={{ color: 'var(--text-1)' }}>{serverInfo.scanners_connected}</strong> scanner{serverInfo.scanners_connected !== 1 ? 's' : ''}{' · '}
+                    <strong style={{ color: 'var(--text-1)' }}>{serverInfo.apps_connected}</strong> web app{serverInfo.apps_connected !== 1 ? 's' : ''}
+                  </span>
+                  <button
+                    className="md-btn md-btn-neutral md-btn-sm"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={loadServerInfo}
+                    disabled={serverInfoBusy}
+                  >
+                    <span className="icon icon-sm">refresh</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Access control (Admin only) */}
         {isAdmin && (

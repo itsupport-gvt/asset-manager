@@ -37,6 +37,9 @@ from services.sync_service import sync_from_excel, sync_to_excel, sync_logs_from
 from graph_client import GraphClient
 from config import NGROK_URL
 
+# ── Dynamic ngrok state ───────────────────────────────────────────────────────
+_ngrok_tunnel = None   # pyngrok tunnel object when active
+
 import traceback
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -62,7 +65,7 @@ _buf_handler = _BufferHandler()
 _buf_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 logging.getLogger().addHandler(_buf_handler)
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.2.0"
 _APP_SECRET_TOKEN: str = os.environ.get("APP_SECRET_TOKEN", "").strip()
 
 
@@ -94,10 +97,21 @@ def get_scheme() -> str:
     return "http"
 
 
+def get_active_ngrok_url() -> str:
+    """Returns active dynamic ngrok URL, falling back to static NGROK_URL env var."""
+    if _ngrok_tunnel:
+        try:
+            return _ngrok_tunnel.public_url.rstrip("/")
+        except Exception:
+            pass
+    return NGROK_URL
+
+
 def get_scanner_url() -> str:
     # Prefer ngrok HTTPS URL if configured — required for mobile camera access
-    if NGROK_URL:
-        return f"{NGROK_URL}/scanner"
+    ngrok = get_active_ngrok_url()
+    if ngrok:
+        return f"{ngrok}/scanner"
     return f"{get_scheme()}://{get_lan_ip()}:8000/scanner"
 
 
@@ -303,6 +317,92 @@ async def scanner_qr():
             "X-Scanner-URL": url,
         },
     )
+
+
+# ── Mobile / admin connection helpers ────────────────────────────────────────
+
+@app.get("/api/admin/server-info")
+async def admin_server_info():
+    """Returns server connection details for mobile app onboarding (admin UI)."""
+    port   = int(os.environ.get("PORT", 8000))
+    scheme = get_scheme()
+    lan_ip = get_lan_ip()
+    ngrok  = get_active_ngrok_url()
+    ws     = scanner_status()
+    return {
+        "local_url":       f"{scheme}://{lan_ip}:{port}",
+        "lan_ip":          lan_ip,
+        "port":            port,
+        "scheme":          scheme,
+        "ngrok_url":       ngrok,
+        "ngrok_active":    bool(_ngrok_tunnel),
+        "scanners_connected": ws.get("scanners_connected", 0),
+        "apps_connected":     ws.get("apps_connected", 0),
+    }
+
+
+@app.post("/api/admin/ngrok/start")
+async def start_ngrok_tunnel(authtoken: str | None = None):
+    """Start a pyngrok tunnel on port 8000. Optionally provide an authtoken."""
+    global _ngrok_tunnel
+    try:
+        from pyngrok import ngrok as _pyngrok
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pyngrok is not installed. Add 'pyngrok' to requirements.txt.")
+
+    try:
+        if _ngrok_tunnel:
+            return {"url": _ngrok_tunnel.public_url, "already_running": True}
+        if authtoken:
+            _pyngrok.set_auth_token(authtoken)
+        port = int(os.environ.get("PORT", 8000))
+        tunnel = _pyngrok.connect(port)
+        _ngrok_tunnel = tunnel
+        logger.info(f"[ngrok] Tunnel started: {tunnel.public_url}")
+        return {"url": tunnel.public_url, "started": True}
+    except Exception as e:
+        logger.error(f"[ngrok] Failed to start: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/ngrok/stop")
+async def stop_ngrok_tunnel():
+    """Stop the active pyngrok tunnel."""
+    global _ngrok_tunnel
+    try:
+        from pyngrok import ngrok as _pyngrok
+    except ImportError:
+        raise HTTPException(status_code=500, detail="pyngrok is not installed.")
+
+    try:
+        if _ngrok_tunnel:
+            _pyngrok.disconnect(_ngrok_tunnel.public_url)
+            _ngrok_tunnel = None
+            logger.info("[ngrok] Tunnel stopped.")
+        return {"stopped": True}
+    except Exception as e:
+        logger.error(f"[ngrok] Failed to stop: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/qr-code")
+async def admin_qr_code(url: str):
+    """Return a QR code PNG for any given URL (used by the admin mobile-connection panel)."""
+    import qrcode  # lazy import — already in requirements.txt
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=3,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#202124", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 # ── Health / status ───────────────────────────────────────────────────────────

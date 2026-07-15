@@ -247,8 +247,12 @@ function ShortcutsModal({ onClose, isAdmin, canCreate }: { onClose: () => void; 
       heading: 'Actions',
       rows: [
         ...(canCreate ? [{ keys: 'Ctrl + N', action: 'New asset', scope: 'Global' }] : []),
-        { keys: 'Ctrl + S', action: 'Save form', scope: 'Forms' },
-        { keys: '?',        action: 'Toggle this help panel', scope: 'Global' },
+        { keys: 'Ctrl + S',       action: 'Save form',                  scope: 'Forms' },
+        { keys: 'Ctrl + Shift + E', action: 'Edit asset',               scope: 'Asset detail' },
+        { keys: 'Ctrl + Shift + A', action: 'Assign asset',             scope: 'Asset detail · unassigned' },
+        { keys: 'Ctrl + Shift + R', action: 'Return asset',             scope: 'Asset detail · assigned' },
+        { keys: 'Ctrl + Shift + W', action: 'Swap asset',               scope: 'Asset detail · assigned' },
+        { keys: '?',                action: 'Toggle this help panel',   scope: 'Global' },
         ...(isAdmin ? [{ keys: 'Ctrl + `', action: 'Toggle server log panel', scope: 'Global · Admin' }] : []),
       ],
     },
@@ -623,6 +627,11 @@ function AppInner() {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'n' && canCreate) { e.preventDefault(); navigate('/new-asset'); return }
         if (e.key === '`' && isAdmin)   { e.preventDefault(); setLogPanelOpen(o => !o); return }
+        if (e.key === 's') {
+          e.preventDefault()
+          document.dispatchEvent(new CustomEvent('save-form'))
+          return
+        }
       }
 
       if (e.key === 'Escape') {
@@ -632,7 +641,16 @@ function AppInner() {
 
       if (e.key === 'Backspace' && !isTyping(e)) {
         e.preventDefault()
-        navigate(-1)
+        // Smart back navigation: action pages always return to their parent asset
+        const loc = window.location.pathname
+        const actionMatch = loc.match(/^\/(assign|return|swap|edit)\/(.+)/)
+        if (actionMatch) {
+          navigate(`/asset/${actionMatch[2]}`)
+        } else if (loc === '/new-employee') {
+          navigate('/employees')
+        } else {
+          navigate(-1)
+        }
         return
       }
 

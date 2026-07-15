@@ -2,6 +2,15 @@ import { useNavigate } from 'react-router-dom';
 import type { Asset } from '../lib/types';
 import { StatusBadge } from './StatusBadge';
 
+const CONDITION_STYLE: Record<string, { bg: string; color: string }> = {
+  new:       { bg: '#e6f4ea', color: '#1e7e34' },
+  excellent: { bg: '#e8f5e9', color: '#2e7d32' },
+  good:      { bg: '#e3f2fd', color: '#1565c0' },
+  fair:      { bg: '#fff8e1', color: '#f57f17' },
+  poor:      { bg: '#fce4ec', color: '#c62828' },
+  damaged:   { bg: '#ffebee', color: '#b71c1c' },
+};
+
 const TYPE_ICON: Record<string, string> = {
   laptop: 'laptop', desktop: 'desktop_windows', monitor: 'monitor',
   'smart tv': 'tv', server: 'dns', printer: 'print',
@@ -62,7 +71,7 @@ export function AssetCard({ asset, compact, actions }: Props) {
         </div>
 
         {/* Spec tags */}
-        {!compact && (asset.asset_type || asset.memory_ram || asset.storage) && (
+        {!compact && (asset.asset_type || asset.memory_ram || asset.storage || asset.condition) && (
           <div style={{ padding: '0 16px 10px', display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {asset.asset_type && (
               <span style={{
@@ -88,6 +97,17 @@ export function AssetCard({ asset, compact, actions }: Props) {
                 {asset.storage}
               </span>
             )}
+            {asset.condition && (() => {
+              const cs = CONDITION_STYLE[asset.condition.toLowerCase()] ?? { bg: 'var(--surface-2)', color: 'var(--text-2)' };
+              return (
+                <span style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600,
+                  background: cs.bg, color: cs.color,
+                }}>
+                  {asset.condition}
+                </span>
+              );
+            })()}
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Employee } from '../lib/types';
@@ -23,6 +23,14 @@ export function AssignPage() {
   const [error, setError]         = useState('');
 
   useEffect(() => { api.getEmployees().then(setEmployees).catch(e => setError(e.message)); }, []);
+
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    const h = () => submitRef.current();
+    document.addEventListener('save-form', h);
+    return () => document.removeEventListener('save-form', h);
+  }, []);
 
   async function submit() {
     if (!empEmail) { setError('Please select a person or location'); return; }

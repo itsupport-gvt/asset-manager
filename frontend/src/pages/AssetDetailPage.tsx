@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Asset, ActivityLogItem } from '../lib/types';
@@ -186,6 +186,28 @@ export function AssetDetailPage() {
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Ref keeps shortcuts handler always up-to-date without re-registering
+  const assetRef = useRef<Asset | null>(null);
+  assetRef.current = asset;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const cur = assetRef.current;
+      if (!cur) return;
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      const t = e.target as HTMLElement;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+      const assigned = (cur.status || '').toLowerCase() === 'active';
+      const enc = encodeURIComponent(cur.asset_id);
+      if (e.key === 'e' || e.key === 'E') { e.preventDefault(); nav(`/edit/${enc}`); }
+      if ((e.key === 'a' || e.key === 'A') && !assigned) { e.preventDefault(); nav(`/assign/${enc}`); }
+      if ((e.key === 'r' || e.key === 'R') && assigned)  { e.preventDefault(); nav(`/return/${enc}`); }
+      if ((e.key === 'w' || e.key === 'W') && assigned)  { e.preventDefault(); nav(`/swap/${enc}`); }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [nav]);
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 12, color: 'var(--text-2)' }}>

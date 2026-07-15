@@ -430,4 +430,32 @@ export const api = {
     ).toString();
     return `/api/assets/export${qs ? '?' + qs : ''}`;
   },
+
+  // ── Mobile / Admin connection ─────────────────────────────────────────────
+  getServerInfo: () =>
+    req<{
+      local_url: string; lan_ip: string; port: number; scheme: string;
+      ngrok_url: string; ngrok_active: boolean;
+      scanners_connected: number; apps_connected: number;
+    }>('/api/admin/server-info'),
+
+  startNgrok: (authtoken?: string) =>
+    req<{ url: string; started?: boolean; already_running?: boolean }>(
+      '/api/admin/ngrok/start' + (authtoken ? `?authtoken=${encodeURIComponent(authtoken)}` : ''),
+      { method: 'POST' }
+    ),
+
+  stopNgrok: () =>
+    req<{ stopped: boolean }>('/api/admin/ngrok/stop', { method: 'POST' }),
+
+  getQrCode: async (url: string): Promise<Blob> => {
+    const appToken = await getAppToken()
+    const msToken  = await getMsToken()
+    const headers: Record<string, string> = {}
+    if (appToken) headers['X-App-Token']   = appToken
+    if (msToken)  headers['Authorization'] = `Bearer ${msToken}`
+    const res = await fetch(`/api/admin/qr-code?url=${encodeURIComponent(url)}`, { headers })
+    if (!res.ok) throw new Error(res.statusText)
+    return res.blob()
+  },
 };

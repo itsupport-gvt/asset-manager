@@ -99,6 +99,21 @@ html.dark {
 */
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; padding: 0; }
+
+/* Universal keyboard focus ring — covers any input/select/textarea not using md-* classes */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px var(--primary-bg), 0 0 0 3px var(--primary) !important;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.12), 0 0 0 3px var(--primary) !important;
+}
 body {
   background: var(--bg);
   color: var(--text-1);
@@ -277,7 +292,7 @@ button, input, select, textarea { font-family: inherit; }
   .md-select:focus,
   .md-textarea:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-bg), 0 0 0 3px var(--primary);
   }
   .md-input::placeholder,
   .md-textarea::placeholder { color: var(--text-3); user-select: none; -webkit-user-select: none; }

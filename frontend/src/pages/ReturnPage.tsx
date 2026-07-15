@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Asset } from '../lib/types';
@@ -23,6 +23,14 @@ export function ReturnPage() {
   useEffect(() => {
     api.getAsset(assetId).then(a => { setAsset(a); setCondition(a.condition); }).catch(e => setError(e.message));
   }, [assetId]);
+
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    const h = () => submitRef.current();
+    document.addEventListener('save-form', h);
+    return () => document.removeEventListener('save-form', h);
+  }, []);
 
   async function submit() {
     setLoading(true); setError('');

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ScanField } from '../components/ScanField';
@@ -88,6 +88,14 @@ export function EditAssetPage() {
     setForm(f => f ? { ...f, [key]: val } : null);
   const sel = (key: keyof CreateAssetRequest) => (e: React.ChangeEvent<HTMLSelectElement>) =>
     set(key)(e.target.value);
+
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    const h = () => submitRef.current();
+    document.addEventListener('save-form', h);
+    return () => document.removeEventListener('save-form', h);
+  }, []);
 
   async function submit() {
     if (!form) return;
