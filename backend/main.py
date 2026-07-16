@@ -65,8 +65,15 @@ _buf_handler = _BufferHandler()
 _buf_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 logging.getLogger().addHandler(_buf_handler)
 
-APP_VERSION = "2.2.4"
+APP_VERSION = "2.2.5"
 _APP_SECRET_TOKEN: str = os.environ.get("APP_SECRET_TOKEN", "").strip()
+
+# Log token state at startup so the backend log immediately shows what's loaded
+logger.info(
+    "[auth] startup — APP_SECRET_TOKEN set=%s len=%d | MOBILE_APP_TOKEN set=%s len=%d",
+    bool(_APP_SECRET_TOKEN), len(_APP_SECRET_TOKEN),
+    bool(MOBILE_APP_TOKEN),  len(MOBILE_APP_TOKEN),
+)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -77,6 +84,13 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             electron_ok = hmac.compare_digest(provided, _APP_SECRET_TOKEN)
             mobile_ok   = bool(MOBILE_APP_TOKEN) and hmac.compare_digest(provided, MOBILE_APP_TOKEN)
             if not electron_ok and not mobile_ok:
+                logger.warning(
+                    "[auth] 401 %s %s — header_present=%s provided_len=%d "
+                    "electron_token_len=%d mobile_token_len=%d",
+                    request.method, request.url.path,
+                    bool(provided), len(provided),
+                    len(_APP_SECRET_TOKEN), len(MOBILE_APP_TOKEN),
+                )
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
@@ -418,6 +432,11 @@ async def health():
         "scanner_url": get_scanner_url(),
         "ssl": get_scheme() == "https",
         "ws": scanner_status(),
+        "auth": {
+            "electron_token_active": bool(_APP_SECRET_TOKEN),
+            "mobile_token_configured": bool(MOBILE_APP_TOKEN),
+            "mobile_token_len": len(MOBILE_APP_TOKEN),
+        },
     }
 
 
