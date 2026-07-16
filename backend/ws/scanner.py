@@ -6,6 +6,7 @@ WebSocket bridge: phone scanner ↔ web app.
 
 No auth required — same-network only.
 """
+import json
 from fastapi import WebSocket, WebSocketDisconnect
 
 # Active connections
@@ -14,7 +15,7 @@ _app_conns:   set[WebSocket] = set()
 
 
 async def scanner_ws(ws: WebSocket):
-    """Phone scanner endpoint — receives scans, relays to all app connections."""
+    """Phone scanner endpoint — receives scans, relays to all app connections, sends ACK back."""
     await ws.accept()
     _phone_conns.add(ws)
     print(f"[WS] Scanner connected. Active scanners: {len(_phone_conns)}")
@@ -30,6 +31,20 @@ async def scanner_ws(ws: WebSocket):
                 except Exception:
                     dead.add(app_ws)
             _app_conns -= dead
+
+            # ACK back to the originating scanner so the Android app can confirm delivery
+            try:
+                payload = json.loads(data)
+                asset_id = payload.get("asset_id", "")
+            except (json.JSONDecodeError, AttributeError):
+                asset_id = ""
+            delivered_to = len(_app_conns) - len(dead)
+            ack = json.dumps({
+                "type": "ack",
+                "asset_id": asset_id,
+                "opened_by_clients": delivered_to,
+            })
+            await ws.send_text(ack)
     except WebSocketDisconnect:
         _phone_conns.discard(ws)
         print(f"[WS] Scanner disconnected. Active scanners: {len(_phone_conns)}")

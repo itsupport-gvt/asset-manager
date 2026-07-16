@@ -335,11 +335,22 @@ function writeConfig(cfg) {
 }
 
 function writeEnvFromConfig(cfg) {
+  // Preserve MOBILE_APP_TOKEN from the existing .env — it is set manually and
+  // is not stored in config.json, so we must not overwrite it on every launch.
+  let existingMobileToken = '';
+  try {
+    const raw   = fs.readFileSync(ENV_FILE, 'utf-8');
+    const match = raw.match(/^MOBILE_APP_TOKEN=(.*)$/m);
+    if (match) existingMobileToken = match[1].trim();
+  } catch { /* first run — no existing .env yet */ }
+
+  const mobileToken = (cfg.MOBILE_APP_TOKEN || existingMobileToken || '').trim();
   const lines = [
     `SHAREPOINT_FILE_URL=${cfg.SHAREPOINT_FILE_URL || ''}`,
     `NGROK_URL=${cfg.NGROK_URL || ''}`,
     `AUTH_CLIENT_ID=${cfg.AUTH_CLIENT_ID || _DEFAULT_AUTH_CLIENT_ID || ''}`,
   ];
+  if (mobileToken) lines.push(`MOBILE_APP_TOKEN=${mobileToken}`);
   fs.writeFileSync(ENV_FILE, lines.join('\n') + '\n', 'utf8');
 }
 
@@ -716,7 +727,8 @@ app.whenReady().then(async () => {
         console.log('[bootstrap] silent acquire succeeded — fetching bootstrap.json');
         const bs = await fetchBootstrap();
         if (bs && bs.fileUrl) {
-          cfg = { SHAREPOINT_FILE_URL: bs.fileUrl, AUTH_CLIENT_ID: _DEFAULT_AUTH_CLIENT_ID, NGROK_URL: '' };
+          const prev = readConfig() || {};
+          cfg = { SHAREPOINT_FILE_URL: bs.fileUrl, AUTH_CLIENT_ID: _DEFAULT_AUTH_CLIENT_ID, NGROK_URL: prev.NGROK_URL || '' };
           writeConfig(cfg);
           console.log('[bootstrap] config auto-written from SharePoint bootstrap');
         }

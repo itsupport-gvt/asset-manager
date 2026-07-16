@@ -35,7 +35,7 @@ from database import engine, Base, get_db, SessionLocal, run_migrations
 from models_db import DBAsset, DBEmployee
 from services.sync_service import sync_from_excel, sync_to_excel, sync_logs_from_excel, get_current_sync_status
 from graph_client import GraphClient
-from config import NGROK_URL
+from config import NGROK_URL, MOBILE_APP_TOKEN
 
 # ── Dynamic ngrok state ───────────────────────────────────────────────────────
 _ngrok_tunnel = None   # pyngrok tunnel object when active
@@ -65,7 +65,7 @@ _buf_handler = _BufferHandler()
 _buf_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 logging.getLogger().addHandler(_buf_handler)
 
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.3"
 _APP_SECRET_TOKEN: str = os.environ.get("APP_SECRET_TOKEN", "").strip()
 
 
@@ -73,7 +73,10 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if _APP_SECRET_TOKEN and request.url.path.startswith("/api/"):
             provided = request.headers.get("X-App-Token", "")
-            if not hmac.compare_digest(provided, _APP_SECRET_TOKEN):
+            # Accept either the Electron per-launch token or the static mobile token
+            electron_ok = hmac.compare_digest(provided, _APP_SECRET_TOKEN)
+            mobile_ok   = bool(MOBILE_APP_TOKEN) and hmac.compare_digest(provided, MOBILE_APP_TOKEN)
+            if not electron_ok and not mobile_ok:
                 return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
