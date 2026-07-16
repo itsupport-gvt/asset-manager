@@ -17,7 +17,7 @@ async function getAppToken(): Promise<string | null> {
 // ── Microsoft ID token ────────────────────────────────────────────────────────
 let _msToken: string | null = null
 let _msTokenAt = 0
-const _MS_TTL  = 50 * 60 * 1000
+const _MS_TTL  = 30 * 60 * 1000  // 30 min — 30 min buffer before Azure's 1-hour ID token expiry
 
 export function clearMsToken() {
   _msToken = null

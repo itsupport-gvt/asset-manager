@@ -65,7 +65,7 @@ _buf_handler = _BufferHandler()
 _buf_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 logging.getLogger().addHandler(_buf_handler)
 
-APP_VERSION = "2.2.3"
+APP_VERSION = "2.2.4"
 _APP_SECRET_TOKEN: str = os.environ.get("APP_SECRET_TOKEN", "").strip()
 
 

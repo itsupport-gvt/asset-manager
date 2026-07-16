@@ -138,15 +138,21 @@ async function msAcquireSilent() {
     if (!accounts || accounts.length === 0) return null;
     if (!_msalAccount && accounts.length > 1) return null;
     const account = _msalAccount || accounts[0];
+    // 15 s instead of 5 s — machine-wake / slow-LAN scenarios need more headroom
     const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('silent acquire timeout')), 5000)
+      setTimeout(() => reject(new Error('silent acquire timeout')), 15000)
     );
-    const result  = await Promise.race([
+    let result = await Promise.race([
       _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account }),
       timeout,
     ]);
-    _msalAccount  = result.account;
-    _msIdToken    = result.idToken;
+    // Azure doesn't always re-issue the ID token on cached-access-token hits.
+    // If idToken is missing, force a server round-trip to get a fresh one.
+    if (result && !result.idToken) {
+      result = await _msalApp.acquireTokenSilent({ scopes: _MSAL_SCOPES, account, forceRefresh: true });
+    }
+    _msalAccount = result.account;
+    _msIdToken   = result.idToken || _msIdToken; // never downgrade to null
     return result;
   } catch (e) { console.error('[msal] silent acquire failed:', e.message); return null; }
 }
@@ -603,7 +609,9 @@ ipcMain.handle('get-ms-user', async () => {
 
 ipcMain.handle('get-ms-token', async () => {
   const result = await msAcquireSilent();
-  return result ? result.idToken : null;
+  // Prefer fresh idToken; fall back to the last known good one so a failed
+  // silent acquire doesn't instantly log the user out mid-session.
+  return (result && result.idToken) ? result.idToken : (_msIdToken || null);
 });
 
 ipcMain.handle('get-ms-graph-token', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "asset-manager",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "description": "Gravity Asset Manager â€” Desktop App",
   "main": "main.js",
   "scripts": {
