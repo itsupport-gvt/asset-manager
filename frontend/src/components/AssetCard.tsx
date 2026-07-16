@@ -2,14 +2,6 @@ import { useNavigate } from 'react-router-dom';
 import type { Asset } from '../lib/types';
 import { StatusBadge } from './StatusBadge';
 
-const CONDITION_STYLE: Record<string, { bg: string; color: string }> = {
-  new:       { bg: '#e6f4ea', color: '#1e7e34' },
-  excellent: { bg: '#e8f5e9', color: '#2e7d32' },
-  good:      { bg: '#e3f2fd', color: '#1565c0' },
-  fair:      { bg: '#fff8e1', color: '#f57f17' },
-  poor:      { bg: '#fce4ec', color: '#c62828' },
-  damaged:   { bg: '#ffebee', color: '#b71c1c' },
-};
 
 const TYPE_ICON: Record<string, string> = {
   laptop: 'laptop', desktop: 'desktop_windows', monitor: 'monitor',
@@ -46,7 +38,7 @@ export function AssetCard({ asset, compact, actions }: Props) {
         style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
       >
         {/* Header */}
-        <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{
             width: 40, height: 40, borderRadius: 10, background: 'var(--primary-bg)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -72,52 +64,50 @@ export function AssetCard({ asset, compact, actions }: Props) {
 
         {/* Spec tags */}
         {!compact && (asset.asset_type || asset.memory_ram || asset.storage || asset.condition) && (
-          <div style={{ padding: '0 16px 10px', display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-            {asset.asset_type && (
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                background: 'var(--surface-2)', color: 'var(--text-3)', fontWeight: 500,
-              }}>
-                {asset.asset_type}
-              </span>
-            )}
-            {asset.memory_ram && (
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                background: 'var(--surface-2)', color: 'var(--text-2)', fontWeight: 500,
-              }}>
-                {asset.memory_ram}
-              </span>
-            )}
-            {asset.storage && (
-              <span style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                background: 'var(--surface-2)', color: 'var(--text-2)', fontWeight: 500,
-              }}>
-                {asset.storage}
-              </span>
-            )}
-            {asset.condition && (() => {
-              const cs = CONDITION_STYLE[asset.condition.toLowerCase()] ?? { bg: 'var(--surface-2)', color: 'var(--text-2)' };
-              return (
+          <div style={{ padding: '0 14px 9px', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* Left: hardware chips */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, minWidth: 0 }}>
+              {asset.asset_type && (
                 <span style={{
-                  fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600,
-                  background: cs.bg, color: cs.color,
+                  fontSize: 11, padding: '2px 7px', borderRadius: 5,
+                  background: 'var(--surface-2)', color: 'var(--text-3)', fontWeight: 500,
                 }}>
-                  {asset.condition}
+                  {asset.asset_type}
                 </span>
-              );
-            })()}
+              )}
+              {asset.memory_ram && (
+                <span style={{
+                  fontSize: 11, padding: '2px 7px', borderRadius: 5,
+                  background: 'var(--surface-2)', color: 'var(--text-2)', fontWeight: 500,
+                }}>
+                  {asset.memory_ram}
+                </span>
+              )}
+              {asset.storage && (
+                <span style={{
+                  fontSize: 11, padding: '2px 7px', borderRadius: 5,
+                  background: 'var(--surface-2)', color: 'var(--text-2)', fontWeight: 500,
+                }}>
+                  {asset.storage}
+                </span>
+              )}
+            </div>
+            {/* Right: condition pill — always pinned to the right */}
+            {asset.condition && (
+              <span className={`cond-pill cond-${asset.condition.toLowerCase()}`}>
+                {asset.condition}
+              </span>
+            )}
           </div>
         )}
 
         {/* Assignee — always shown when not compact so rows align */}
         {!compact && (
           <div style={{
-            marginTop: 'auto', padding: '8px 16px',
+            marginTop: 'auto', padding: '7px 14px',
             borderTop: '1px solid var(--border)',
             display: 'flex', alignItems: 'center', gap: 6,
-            minHeight: 36,
+            minHeight: 33,
           }}>
             {asset.employee_display ? (
               <>

@@ -100,19 +100,19 @@ html.dark {
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; padding: 0; }
 
-/* Universal keyboard focus ring — covers any input/select/textarea not using md-* classes */
+/* Universal keyboard focus ring — soft glow, not a thick hard border */
 input:focus,
 select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 2px var(--primary-bg), 0 0 0 3px var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.18) !important;
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 html.dark input:focus,
 html.dark select:focus,
 html.dark textarea:focus {
-  box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.12), 0 0 0 3px var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(138, 180, 248, 0.2) !important;
 }
 body {
   background: var(--bg);
@@ -292,7 +292,12 @@ button, input, select, textarea { font-family: inherit; }
   .md-select:focus,
   .md-textarea:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 2px var(--primary-bg), 0 0 0 3px var(--primary);
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.18);
+  }
+  html.dark .md-input:focus,
+  html.dark .md-select:focus,
+  html.dark .md-textarea:focus {
+    box-shadow: 0 0 0 3px rgba(138, 180, 248, 0.2);
   }
   .md-input::placeholder,
   .md-textarea::placeholder { color: var(--text-3); user-select: none; -webkit-user-select: none; }
@@ -403,6 +408,30 @@ button, input, select, textarea { font-family: inherit; }
   .badge-blue    { background: var(--primary-bg); color: var(--primary); }
   html.dark .badge-purple { background: #2d1b3d; color: #d1a3e8; }
 
+  /* Condition pills — colour-coded, dark-mode friendly */
+  .cond-pill {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    letter-spacing: .1px;
+  }
+  .cond-new,
+  .cond-excellent { background: rgba(46,125,50,.1);   color: #2e7d32; }
+  .cond-good      { background: rgba(21,101,192,.1);  color: #1565c0; }
+  .cond-fair      { background: rgba(230,81,0,.1);    color: #bf360c; }
+  .cond-poor      { background: rgba(198,40,40,.1);   color: #c62828; }
+  .cond-damaged   { background: rgba(183,28,28,.08);  color: #b71c1c; }
+
+  html.dark .cond-new,
+  html.dark .cond-excellent { background: rgba(129,201,149,.1);  color: #81c995; }
+  html.dark .cond-good      { background: rgba(138,180,248,.1);  color: #8ab4f8; }
+  html.dark .cond-fair      { background: rgba(253,214,99,.1);   color: #c9952a; }
+  html.dark .cond-poor      { background: rgba(242,139,130,.1);  color: #e08080; }
+  html.dark .cond-damaged   { background: rgba(242,139,130,.07); color: #d47070; }
+
   table thead th { user-select: none; -webkit-user-select: none; }
 
   .md-row { transition: background-color .12s ease; }
@@ -430,9 +459,12 @@ input:-webkit-autofill, input:-webkit-autofill:focus {
    :focus-visible shows only when navigating by keyboard, not on mouse click.
 */
 *:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 1.5px solid rgba(26, 115, 232, 0.55);
   outline-offset: 2px;
   border-radius: 4px;
+}
+html.dark *:focus-visible {
+  outline: 1.5px solid rgba(138, 180, 248, 0.5);
 }
 /* md-input/select/textarea already use border + box-shadow — suppress duplicate ring */
 .md-input:focus-visible,
