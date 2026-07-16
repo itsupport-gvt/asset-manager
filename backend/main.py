@@ -126,8 +126,8 @@ app.add_middleware(TokenAuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173",
-                   "http://localhost:8000", "http://127.0.0.1:8000"],
+    # Allow localhost (dev) + any LAN IP (mobile app, browser on other machines)
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*", "X-App-Token", "Authorization", "X-MS-Graph-Token"],
@@ -443,4 +443,4 @@ if STATIC_DIR.exists():
 # ── Entry point for PyInstaller / direct run ──────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("PORT", "8000")), reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")), reload=False)
